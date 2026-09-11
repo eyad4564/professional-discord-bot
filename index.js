@@ -1,2864 +1,5242 @@
+require('dotenv').config();
+
 const {
-    Client,
-    GatewayIntentBits,
-    Partials,
-    ActivityType,
-    PermissionsBitField,
-    ChannelType,
-    EmbedBuilder,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
-    StringSelectMenuBuilder,
-    StringSelectMenuOptionBuilder,
-    ModalBuilder,
-    TextInputBuilder,
-    TextInputStyle,
-    REST,
-    Routes,
-    SlashCommandBuilder
-} = require("discord.js");
+  Client,
+  GatewayIntentBits,
+  Partials,
+  ActivityType,
+  PermissionsBitField,
+  ChannelType,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  AttachmentBuilder
+} = require('discord.js');
 
-const fs = require("fs");
-const path = require("path");
+const fs = require('fs');
+const path = require('path');
 
-// ======================================================
-// CLIENT
-// ======================================================
-
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences
-    ],
-
-    partials: [
-        Partials.Channel,
-        Partials.Message,
-        Partials.User,
-        Partials.GuildMember
-    ]
-});
-
-// ======================================================
-// FILES
-// ======================================================
-
-const DATA_FILE = path.join(__dirname, "data.json");
-
-let data = {
-    guilds: {},
-    users: {},
-    warnings: [],
-    jails: [],
-    tickets: {},
-    stats: {},
-    pay: {
-        balances: {},
-        enabled: false
-    }
-};
-
-// ======================================================
-// LOAD DATA
-// ======================================================
-
-function loadData() {
-    try {
-        if (!fs.existsSync(DATA_FILE)) {
-            saveData();
-            return;
-        }
-
-        const raw = fs.readFileSync(DATA_FILE, "utf8");
-
-        if (!raw.trim()) {
-            saveData();
-            return;
-        }
-
-        const parsed = JSON.parse(raw);
-
-        data = {
-            guilds: parsed.guilds || {},
-            users: parsed.users || {},
-            warnings: Array.isArray(parsed.warnings)
-                ? parsed.warnings
-                : [],
-            jails: Array.isArray(parsed.jails)
-                ? parsed.jails
-                : [],
-            tickets: parsed.tickets || {},
-            stats: parsed.stats || {},
-            pay: parsed.pay || {
-                balances: {},
-                enabled: false
-            }
-        };
-
-        if (!data.pay.balances) {
-            data.pay.balances = {};
-        }
-
-    } catch (error) {
-        console.error("❌ Failed to load data:", error);
-
-        data = {
-            guilds: {},
-            users: {},
-            warnings: [],
-            jails: [],
-            tickets: {},
-            stats: {},
-            pay: {
-                balances: {},
-                enabled: false
-            }
-        };
-
-        saveData();
-    }
-}
-
-// ======================================================
-// SAVE DATA
-// ======================================================
-
-function saveData() {
-    try {
-        fs.writeFileSync(
-            DATA_FILE,
-            JSON.stringify(data, null, 2),
-            "utf8"
-        );
-    } catch (error) {
-        console.error("❌ Failed to save data:", error);
-    }
-}
-
-loadData();
-
-// ======================================================
-// BOT TOKEN
-// ======================================================
+// ============================================================
+// CONFIG
+// ============================================================
 
 const TOKEN = process.env.DISCORD_TOKEN;
+const PREFIX = process.env.PREFIX || '!';
 
 if (!TOKEN) {
-    console.error("❌ DISCORD_TOKEN is missing!");
-    process.exit(1);
+  throw new Error('DISCORD_TOKEN is missing from Railway Environment Variables.');
 }
 
-// ======================================================
-// BOT OWNER
-// ======================================================
+const DATA_FILE = path.join(__dirname, 'data.json');
 
-let APPLICATION_OWNER_ID = null;
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildPresences,
+    GatewayIntentBits.GuildVoiceStates
+  ],
+  partials: [
+    Partials.Channel,
+    Partials.Message,
+    Partials.User,
+    Partials.GuildMember
+  ]
+});
 
-async function refreshApplicationOwner() {
+// ============================================================
+// DATA
+// ============================================================
+
+const DEFAULT_DATA = {
+  guilds: {},
+  users: {},
+  warnings: {},
+  jails: {},
+  tickets: {},
+  applications: {},
+  complaints: {},
+  temp: {}
+};
+
+let data = loadData();
+let botOwnerId = null;
+
+function loadData() {
+  try {
+    if (!fs.existsSync(DATA_FILE)) {
+      fs.writeFileSync(
+        DATA_FILE,
+        JSON.stringify(DEFAULT_DATA, null, 2)
+      );
+    }
+
+    const d = JSON.parse(
+      fs.readFileSync(DATA_FILE, 'utf8')
+    );
+
+    for (const k of Object.keys(DEFAULT_DATA)) {
+      if (!d[k]) {
+        d[k] = structuredClone(DEFAULT_DATA[k]);
+      }
+    }
+
+    return d;
+  } catch (e) {
+    console.error('loadData:', e);
+    return structuredClone(DEFAULT_DATA);
+  }
+}
+
+let saveTimer;
+
+function saveData(immediate = false) {
+  if (immediate) {
+    fs.writeFileSync(
+      DATA_FILE,
+      JSON.stringify(data, null, 2)
+    );
+    return;
+  }
+
+  if (saveTimer) return;
+
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+
     try {
-        const application = await client.application.fetch();
-
-        if (application.owner) {
-            APPLICATION_OWNER_ID = application.owner.id;
-        }
-
-        console.log(
-            `👑 Bot Owner: ${APPLICATION_OWNER_ID || "Unknown"}`
-        );
-
-    } catch (error) {
-        console.error(
-            "❌ Could not fetch application owner:",
-            error.message
-        );
+      fs.writeFileSync(
+        DATA_FILE,
+        JSON.stringify(data, null, 2)
+      );
+    } catch (e) {
+      console.error('saveData:', e);
     }
+  }, 500);
 }
 
-// ======================================================
-// OWNER CHECK
-// ======================================================
+// ============================================================
+// GUILD CONFIG
+// ============================================================
 
-async function isBotOwner(userId) {
+function guildCfg(gid) {
+  data.guilds[gid] ||= {
+    channels: {
+      welcome: null,
+      leave: null,
+      joinLeaveLog: null,
+      spamLog: null,
+      moderationLog: null,
+      jailLog: null,
+      ticketLog: null,
+      applicationRoom: null,
+      applicationLog: null,
+      complaintLog: null
+    },
 
-    if (
-        APPLICATION_OWNER_ID &&
-        userId === APPLICATION_OWNER_ID
-    ) {
-        return true;
+    ticketCategoryId: null,
+
+    jailRoleId: null,
+
+    applicationRoles: {
+      role1: null,
+      role2: null
+    },
+
+    adminRoles: {
+      middle: [],
+      high: [],
+      owner: []
     }
+  };
 
-    try {
-        const application =
-            await client.application.fetch();
+  const g = data.guilds[gid];
 
-        if (
-            application.owner &&
-            application.owner.id === userId
-        ) {
-            return true;
-        }
+  g.channels ||= {};
 
-    } catch (error) {
-        console.error(
-            "Owner check error:",
-            error.message
-        );
-    }
+  g.applicationRoles ||= {
+    role1: null,
+    role2: null
+  };
 
-    return false;
+  g.adminRoles ||= {
+    middle: [],
+    high: [],
+    owner: []
+  };
+
+  return g;
 }
 
-// ======================================================
-// ADMIN CHECK
-// ======================================================
+// ============================================================
+// USER DATA
+// ============================================================
+
+function userData(gid, uid) {
+  const k = `${gid}:${uid}`;
+
+  data.users[k] ||= {
+    xp: 0,
+    voiceXp: 0,
+    actionPoints: 0,
+    warnings: 0,
+    timeouts: 0,
+    ticketsClaimed: 0,
+    baston: 0
+  };
+
+  return data.users[k];
+}
+
+// ============================================================
+// HIERARCHY
+// ============================================================
+
+function isBotOwner(id) {
+  return !!botOwnerId && id === botOwnerId;
+}
+
+function isServerOwner(member) {
+  return !!member?.guild &&
+    member.guild.ownerId === member.id;
+}
+
+function level(member) {
+  if (!member?.guild) return 0;
+
+  if (isBotOwner(member.id)) {
+    return 100;
+  }
+
+  if (isServerOwner(member)) {
+    return 90;
+  }
+
+  const c = guildCfg(member.guild.id);
+
+  if (
+    c.adminRoles.owner.some(
+      r => member.roles.cache.has(r)
+    )
+  ) {
+    return 80;
+  }
+
+  if (
+    c.adminRoles.high.some(
+      r => member.roles.cache.has(r)
+    )
+  ) {
+    return 60;
+  }
+
+  if (
+    c.adminRoles.middle.some(
+      r => member.roles.cache.has(r)
+    )
+  ) {
+    return 40;
+  }
+
+  if (
+    member.permissions.has(
+      PermissionsBitField.Flags.Administrator
+    )
+  ) {
+    return 20;
+  }
+
+  return 0;
+}
 
 function isAdmin(member) {
-
-    if (!member) {
-        return false;
-    }
-
-    return member.permissions.has(
-        PermissionsBitField.Flags.Administrator
-    );
+  return level(member) > 0;
 }
 
-// ======================================================
-// MODERATOR CHECK
-// ======================================================
+function isHigh(member) {
+  return level(member) >= 60;
+}
 
-function isModerator(member) {
+function isTop(member) {
+  return level(member) >= 80;
+}
 
-    if (!member) {
-        return false;
+function canPunish(actor, target) {
+  return !!actor &&
+    !!target &&
+    actor.id !== target.id &&
+    level(actor) > level(target);
+}
+
+// ============================================================
+// UTILITIES
+// ============================================================
+
+function nowText() {
+  return new Date().toLocaleString(
+    'ar-EG',
+    {
+      dateStyle: 'medium',
+      timeStyle: 'medium'
     }
+  );
+}
 
+function parseDuration(s) {
+  const m = String(s || '')
+    .trim()
+    .toLowerCase()
+    .match(/^(\d+)(s|m|h|d|w)$/);
+
+  if (!m) return null;
+
+  const n = +m[1];
+  const u = m[2];
+
+  return n * ({
+    s: 1000,
+    m: 60000,
+    h: 3600000,
+    d: 86400000,
+    w: 604800000
+  }[u]);
+}
+
+function fmt(ms) {
+  let s = Math.floor(ms / 1000);
+
+  if (s <= 0) {
+    return '0 ثانية';
+  }
+
+  const out = [];
+
+  const map = [
+    [604800, 'أسبوع'],
+    [86400, 'يوم'],
+    [3600, 'ساعة'],
+    [60, 'دقيقة'],
+    [1, 'ثانية']
+  ];
+
+  for (const [v, n] of map) {
+    const q = Math.floor(s / v);
+
+    if (q) {
+      out.push(`${q} ${n}`);
+      s %= v;
+    }
+  }
+
+  return out.join(' و ');
+}
+
+function countEmoji(text) {
+  try {
     return (
-        member.permissions.has(
-            PermissionsBitField.Flags.Administrator
-        ) ||
-        member.permissions.has(
-            PermissionsBitField.Flags.ManageGuild
-        ) ||
-        member.permissions.has(
-            PermissionsBitField.Flags.ManageMessages
+      text.match(
+        /(?:\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}\uFE0F)/gu
+      ) || []
+    ).length;
+  } catch {
+    return 0;
+  }
+}
+
+// ============================================================
+// POINTS
+// ============================================================
+
+function points(xp) {
+  return Math.floor((xp || 0) / 1500) * 3;
+}
+
+function totalPoints(u) {
+  return points(u.xp) +
+    (u.actionPoints || 0);
+}
+
+// ============================================================
+// CHANNEL / LOG HELPERS
+// ============================================================
+
+async function fetchText(guild, id) {
+  if (!id) return null;
+
+  const c = await guild.channels
+    .fetch(id)
+    .catch(() => null);
+
+  return c?.isTextBased()
+    ? c
+    : null;
+}
+
+async function sendLog(guild, kind, embed, file) {
+  const id =
+    guildCfg(guild.id).channels[kind];
+
+  const ch =
+    await fetchText(guild, id);
+
+  if (!ch) return;
+
+  await ch.send(
+    file
+      ? {
+          embeds: [embed],
+          files: [file]
+        }
+      : {
+          embeds: [embed]
+        }
+  ).catch(console.error);
+}
+
+async function dmOwner(title, err) {
+  if (!botOwnerId) return;
+
+  const u =
+    await client.users
+      .fetch(botOwnerId)
+      .catch(() => null);
+
+  if (!u) return;
+
+  await u.send({
+    embeds: [
+      new EmbedBuilder()
+        .setTitle(`🚨 ${title}`)
+        .setDescription(
+          `البوت فيه مشكلة برجاء الحل في اسرع وقت\n\n` +
+          `\`\`\`\n` +
+          `${String(
+            err?.stack || err
+          ).slice(0, 1800)}` +
+          `\n\`\`\``
         )
+        .setTimestamp()
+    ]
+  }).catch(() => {});
+}
+
+// ============================================================
+// MODERATION
+// ============================================================
+
+const warnReasons = {
+  rules: 'مخالفة القوانين',
+  insult: 'سب / إهانة',
+  spam: 'سبام',
+  staff: 'إساءة للإدارة'
+};
+
+function activeWarnings(gid, uid) {
+  const k = `${gid}:${uid}`;
+
+  data.warnings[k] ||= [];
+
+  const now = Date.now();
+
+  data.warnings[k] =
+    data.warnings[k].filter(
+      x => x.expiresAt > now
     );
+
+  return data.warnings[k];
 }
 
-// ======================================================
-// DURATION PARSER
-// ======================================================
-
-function parseDuration(input) {
-
-    if (!input) {
-        return null;
-    }
-
-    const value =
-        String(input)
-            .trim()
-            .toLowerCase();
-
-    const match =
-        value.match(/^(\d+)(s|m|h|d|w)$/);
-
-    if (!match) {
-        return null;
-    }
-
-    const amount =
-        Number(match[1]);
-
-    const unit =
-        match[2];
-
-    if (
-        !Number.isFinite(amount) ||
-        amount <= 0
-    ) {
-        return null;
-    }
-
-    const units = {
-        s: 1000,
-        m: 60 * 1000,
-        h: 60 * 60 * 1000,
-        d: 24 * 60 * 60 * 1000,
-        w: 7 * 24 * 60 * 60 * 1000
-    };
-
-    const ms =
-        amount * units[unit];
-
-    if (
-        !Number.isFinite(ms) ||
-        ms <= 0
-    ) {
-        return null;
-    }
-
-    return ms;
-}
-
-// ======================================================
-// FORMAT DURATION
-// ======================================================
-
-function formatDuration(ms) {
-
-    let seconds =
-        Math.floor(ms / 1000);
-
-    const days =
-        Math.floor(seconds / 86400);
-
-    seconds %= 86400;
-
-    const hours =
-        Math.floor(seconds / 3600);
-
-    seconds %= 3600;
-
-    const minutes =
-        Math.floor(seconds / 60);
-
-    seconds %= 60;
-
-    const parts = [];
-
-    if (days) {
-        parts.push(`${days} يوم`);
-    }
-
-    if (hours) {
-        parts.push(`${hours} ساعة`);
-    }
-
-    if (minutes) {
-        parts.push(`${minutes} دقيقة`);
-    }
-
-    if (
-        seconds &&
-        parts.length === 0
-    ) {
-        parts.push(`${seconds} ثانية`);
-    }
-
-    return parts.join(" و ") || "0 ثانية";
-}
-
-// ======================================================
-// GET USER STATS
-// ======================================================
-
-function getStats(guildId, userId) {
-
-    const key =
-        `${guildId}_${userId}`;
-
-    if (!data.stats[key]) {
-
-        data.stats[key] = {
-            guildId,
-            userId,
-
-            warnings: 0,
-            timeouts: 0,
-            ticketsClaimed: 0,
-
-            xp: 0,
-            actionPoints: 0
-        };
-    }
-
-    return data.stats[key];
-}
-
-// ======================================================
-// ADD XP
-// ======================================================
-
-function addXP(guildId, userId, amount) {
-
-    const stats =
-        getStats(guildId, userId);
-
-    stats.xp += amount;
-
-    saveData();
-}
-
-// ======================================================
-// ADD ACTION POINTS
-// ======================================================
-
-function addActionPoints(
-    guildId,
-    userId,
-    amount
+async function issueWarning(
+  guild,
+  actor,
+  target,
+  reason,
+  dur
 ) {
-
-    const stats =
-        getStats(guildId, userId);
-
-    stats.actionPoints += amount;
-
-    saveData();
-}
-
-// ======================================================
-// TOTAL POINTS
-// ======================================================
-
-function getTotalPoints(
-    guildId,
-    userId
-) {
-
-    const stats =
-        getStats(guildId, userId);
-
-    const xpPoints =
-        Math.floor(
-            stats.xp / 1500
-        ) * 3;
-
-    return (
-        xpPoints +
-        stats.actionPoints
+  if (!canPunish(actor, target)) {
+    throw new Error(
+      'لا يمكنك معاقبة إداري أعلى منك أو بنفس مستواك.'
     );
-}
+  }
 
-// ======================================================
-// ADD MESSAGE XP
-// ======================================================
+  const k =
+    `${guild.id}:${target.id}`;
 
-function handleMessageXP(message) {
+  data.warnings[k] ||= [];
 
-    if (!message.guild) {
-        return;
-    }
+  data.warnings[k].push({
+    id: Date.now(),
+    moderatorId: actor.id,
+    reason,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + dur
+  });
 
-    if (message.author.bot) {
-        return;
-    }
+  const a =
+    userData(guild.id, actor.id);
 
-    addXP(
-        message.guild.id,
-        message.author.id,
-        10
-    );
-}
+  a.actionPoints += 3;
+  a.warnings += 1;
 
-// ======================================================
-// GUILD CONFIG
-// ======================================================
+  saveData();
 
-function getGuildConfig(guildId) {
+  await target.send(
+    `⚠️ تم تحذيرك في **${guild.name}**\n` +
+    `السبب: ${reason}\n` +
+    `المدة: ${fmt(dur)}`
+  ).catch(() => {});
 
-    if (!data.guilds[guildId]) {
-
-        data.guilds[guildId] = {
-
-            ticketCategoryId: null,
-
-            jailRoleId: null,
-
-            ticketPanelChannelId: null,
-
-            ticketPanelMessageId: null
-        };
-    }
-
-    return data.guilds[guildId];
-}
-
-// ======================================================
-// TICKET CHECK
-// ======================================================
-
-function getTicket(channelId) {
-
-    return data.tickets[channelId] || null;
-}
-
-// ======================================================
-// HIGHEST ROLE POSITION
-// ======================================================
-
-function getHighestRolePosition(member) {
-
-    if (!member) {
-        return 0;
-    }
-
-    return member.roles.highest
-        ? member.roles.highest.position
-        : 0;
-}
-
-// ======================================================
-// CAN WRITE IN CLAIMED TICKET
-// ======================================================
-
-async function canWriteInClaimedTicket(
-    member,
-    ticket
-) {
-
-    if (!member || !ticket) {
-        return false;
-    }
-
-    // Ticket owner
-    if (
-        member.id === ticket.ownerId
-    ) {
-        return true;
-    }
-
-    // Claimer
-    if (
-        member.id === ticket.claimedBy
-    ) {
-        return true;
-    }
-
-    // Bot owner
-    if (
-        await isBotOwner(member.id)
-    ) {
-        return true;
-    }
-
-    // Not admin
-    if (!isModerator(member)) {
-        return false;
-    }
-
-    try {
-
-        const claimer =
-            await member.guild.members.fetch(
-                ticket.claimedBy
-            );
-
-        if (!claimer) {
-            return false;
-        }
-
-        const memberPosition =
-            getHighestRolePosition(member);
-
-        const claimerPosition =
-            getHighestRolePosition(claimer);
-
-        return memberPosition > claimerPosition;
-
-    } catch (error) {
-
-        console.error(
-            "Higher admin check error:",
-            error.message
-        );
-
-        return false;
-    }
-}
-
-// ======================================================
-// CREATE TICKET PANEL
-// ======================================================
-
-function createTicketPanel() {
-
-    const embed =
-        new EmbedBuilder()
-            .setTitle("🎫 نظام التذاكر")
-            .setDescription(
-                "اضغط على الزر بالأسفل لفتح تذكرة خاصة مع الإدارة."
-            )
-            .setFooter({
-                text: "Support System"
-            });
-
-    const row =
-        new ActionRowBuilder()
-            .addComponents(
-
-                new ButtonBuilder()
-                    .setCustomId("ticket_create")
-                    .setLabel("فتح تذكرة")
-                    .setEmoji("🎫")
-                    .setStyle(
-                        ButtonStyle.Primary
-                    )
-            );
-
-    return {
-        embeds: [embed],
-        components: [row]
-    };
-}
-
-// ======================================================
-// CREATE TICKET
-// ======================================================
-
-async function createTicket(interaction) {
-
-    const guild =
-        interaction.guild;
-
-    const existing =
-        Object.values(data.tickets)
-            .find(ticket =>
-                ticket.guildId === guild.id &&
-                ticket.ownerId === interaction.user.id &&
-                ticket.active === true
-            );
-
-    if (existing) {
-
-        return interaction.reply({
-            content:
-                `❌ عندك تذكرة مفتوحة بالفعل: <#${existing.channelId}>`,
-            ephemeral: true
-        });
-    }
-
-    const config =
-        getGuildConfig(guild.id);
-
-    let category = null;
-
-    if (config.ticketCategoryId) {
-
-        category =
-            guild.channels.cache.get(
-                config.ticketCategoryId
-            );
-
-        if (
-            !category ||
-            category.type !== ChannelType.GuildCategory
-        ) {
-            category = null;
-        }
-    }
-
-    const channelName =
-        `ticket-${interaction.user.username}`
-            .toLowerCase()
-            .replace(/[^a-z0-9-_]/g, "")
-            .slice(0, 20);
-
-    const permissionOverwrites = [
-
+  await sendLog(
+    guild,
+    'moderationLog',
+    new EmbedBuilder()
+      .setTitle('⚠️ Warning')
+      .addFields(
         {
-            id: guild.roles.everyone.id,
-
-            deny: [
-                PermissionsBitField.Flags.ViewChannel
-            ]
+          name: 'العضو',
+          value: `${target} (${target.user.tag})`
         },
-
         {
-            id: interaction.user.id,
-
-            allow: [
-                PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.SendMessages,
-                PermissionsBitField.Flags.ReadMessageHistory
-            ]
+          name: 'الإداري',
+          value: `${actor}`
         },
-
         {
-            id: client.user.id,
-
-            allow: [
-                PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.SendMessages,
-                PermissionsBitField.Flags.ReadMessageHistory,
-                PermissionsBitField.Flags.ManageChannels,
-                PermissionsBitField.Flags.ManageMessages
-            ]
+          name: 'السبب',
+          value: reason
+        },
+        {
+          name: 'المدة',
+          value: fmt(dur)
+        },
+        {
+          name: 'الوقت',
+          value: nowText()
         }
-    ];
+      )
+      .setTimestamp()
+  );
 
-    const channel =
-        await guild.channels.create({
+  if (
+    activeWarnings(
+      guild.id,
+      target.id
+    ).length >= 3
+  ) {
+    await target
+      .timeout(
+        30 * 60 * 1000,
+        '3 تحذيرات نشطة'
+      )
+      .catch(() => {});
 
-            name: channelName,
-
-            type: ChannelType.GuildText,
-
-            parent: category
-                ? category.id
-                : null,
-
-            permissionOverwrites
-        });
-
-    data.tickets[channel.id] = {
-
-        channelId: channel.id,
-
-        guildId: guild.id,
-
-        ownerId: interaction.user.id,
-
-        claimedBy: null,
-
-        claimedAt: null,
-
-        active: true,
-
-        createdAt: Date.now()
-    };
-
-    saveData();
-
-    const embed =
-        new EmbedBuilder()
-            .setTitle("🎫 تذكرة جديدة")
-            .setDescription(
-                `أهلًا <@${interaction.user.id}>\n\n` +
-                "اكتب مشكلتك هنا وسيقوم أحد أفراد الإدارة بمساعدتك.\n\n" +
-                "عند استلام التذكرة سيتم منع الإداريين الآخرين من الكتابة فيها."
-            );
-
-    const row =
-        new ActionRowBuilder()
-            .addComponents(
-
-                new ButtonBuilder()
-                    .setCustomId("ticket_claim")
-                    .setLabel("استلام التذكرة")
-                    .setEmoji("📥")
-                    .setStyle(
-                        ButtonStyle.Success
-                    ),
-
-                new ButtonBuilder()
-                    .setCustomId("ticket_unclaim")
-                    .setLabel("إلغاء الاستلام")
-                    .setEmoji("↩️")
-                    .setStyle(
-                        ButtonStyle.Secondary
-                    ),
-
-                new ButtonBuilder()
-                    .setCustomId("ticket_close")
-                    .setLabel("إغلاق التذكرة")
-                    .setEmoji("🔒")
-                    .setStyle(
-                        ButtonStyle.Danger
-                    )
-            );
-
-    await channel.send({
-        content:
-            `<@${interaction.user.id}>`,
-        embeds: [embed],
-        components: [row]
-    });
-
-    await interaction.reply({
-        content:
-            `✅ تم فتح تذكرتك: ${channel}`,
-        ephemeral: true
-    });
+    await target.send(
+      '🚨 وصلت إلى 3 تحذيرات نشطة، وتم إعطاؤك Timeout لمدة 30 دقيقة.'
+    ).catch(() => {});
+  }
 }
 
-// ======================================================
-// CLAIM TICKET
-// ======================================================
+async function issueTimeout(
+  guild,
+  actor,
+  target,
+  dur,
+  reason
+) {
+  if (!canPunish(actor, target)) {
+    throw new Error(
+      'لا يمكنك معاقبة إداري أعلى منك أو بنفس مستواك.'
+    );
+  }
 
-async function claimTicket(interaction) {
+  if (dur > 28 * 86400000) {
+    throw new Error(
+      'مدة Timeout لا تتجاوز 28 يومًا.'
+    );
+  }
 
-    const ticket =
-        getTicket(interaction.channel.id);
+  await target.timeout(
+    dur,
+    reason
+  );
 
-    if (!ticket || !ticket.active) {
+  const a =
+    userData(guild.id, actor.id);
 
-        return interaction.reply({
-            content:
-                "❌ هذه ليست تذكرة فعالة.",
-            ephemeral: true
-        });
+  a.actionPoints += 3;
+  a.timeouts += 1;
+
+  saveData();
+
+  await target.send(
+    `⏱️ تم إعطاؤك Timeout في **${guild.name}**\n` +
+    `السبب: ${reason}\n` +
+    `المدة: ${fmt(dur)}`
+  ).catch(() => {});
+
+  await sendLog(
+    guild,
+    'moderationLog',
+    new EmbedBuilder()
+      .setTitle('⏱️ Timeout')
+      .addFields(
+        {
+          name: 'العضو',
+          value: `${target} (${target.user.tag})`
+        },
+        {
+          name: 'الإداري',
+          value: `${actor}`
+        },
+        {
+          name: 'المدة',
+          value: fmt(dur)
+        },
+        {
+          name: 'السبب',
+          value: reason
+        },
+        {
+          name: 'الوقت',
+          value: nowText()
+        }
+      )
+      .setTimestamp()
+  );
+}
+
+async function issueBan(
+  guild,
+  actor,
+  target,
+  reason
+) {
+  if (!canPunish(actor, target)) {
+    throw new Error(
+      'لا يمكنك باند إداري أعلى منك أو بنفس مستواك.'
+    );
+  }
+
+  await target.ban({
+    reason
+  });
+
+  await sendLog(
+    guild,
+    'moderationLog',
+    new EmbedBuilder()
+      .setTitle('🔨 Ban')
+      .addFields(
+        {
+          name: 'العضو',
+          value:
+            target.user?.tag ||
+            target.id
+        },
+        {
+          name: 'الإداري',
+          value: `${actor}`
+        },
+        {
+          name: 'السبب',
+          value: reason
+        },
+        {
+          name: 'الوقت',
+          value: nowText()
+        }
+      )
+      .setTimestamp()
+  );
+}
+
+// ============================================================
+// JAIL
+// ============================================================
+
+async function setupJail(guild) {
+  const cfg =
+    guildCfg(guild.id);
+
+  let role =
+    cfg.jailRoleId
+      ? await guild.roles
+          .fetch(cfg.jailRoleId)
+          .catch(() => null)
+      : null;
+
+  if (!role) {
+    role = await guild.roles.create({
+      name: 'سجين',
+      reason: 'Jail setup'
+    });
+
+    cfg.jailRoleId = role.id;
+  }
+
+  for (
+    const ch of guild.channels.cache.values()
+  ) {
+    if (
+      [
+        ChannelType.GuildText,
+        ChannelType.GuildAnnouncement,
+        ChannelType.GuildVoice,
+        ChannelType.GuildStageVoice
+      ].includes(ch.type)
+    ) {
+      await ch.permissionOverwrites
+        .edit(role, {
+          ViewChannel: true,
+          SendMessages: false,
+          AddReactions: false,
+          Connect: false,
+          Speak: false
+        })
+        .catch(() => {});
     }
+  }
 
-    if (!isModerator(interaction.member)) {
+  saveData(true);
 
-        return interaction.reply({
-            content:
-                "❌ هذا الزر للإدارة فقط.",
-            ephemeral: true
-        });
-    }
+  return role;
+}
 
-    if (ticket.claimedBy) {
+async function issueJail(
+  guild,
+  actor,
+  target,
+  dur,
+  reason
+) {
+  if (!isHigh(actor)) {
+    throw new Error(
+      'السجن للعليا والأونر وServer Owner وBot Owner فقط.'
+    );
+  }
 
-        return interaction.reply({
-            content:
-                `❌ التذكرة مستلمة بالفعل بواسطة <@${ticket.claimedBy}>.`,
-            ephemeral: true
-        });
-    }
+  if (!canPunish(actor, target)) {
+    throw new Error(
+      'لا يمكنك سجن إداري أعلى منك أو بنفس مستواك.'
+    );
+  }
 
-    ticket.claimedBy =
-        interaction.user.id;
+  const role =
+    await setupJail(guild);
 
-    ticket.claimedAt =
-        Date.now();
+  await target.roles.add(
+    role,
+    reason
+  );
 
-    const stats =
-        getStats(
-            interaction.guild.id,
-            interaction.user.id
-        );
+  data.jails[
+    `${guild.id}:${target.id}`
+  ] = {
+    guildId: guild.id,
+    userId: target.id,
+    roleId: role.id,
+    expiresAt: Date.now() + dur,
+    moderatorId: actor.id,
+    reason
+  };
 
-    stats.ticketsClaimed += 1;
+  saveData(true);
 
-    addActionPoints(
-        interaction.guild.id,
-        interaction.user.id,
-        3
+  await target.send(
+    `⛓️ تم سجنك في **${guild.name}**\n` +
+    `السبب: ${reason}\n` +
+    `المدة: ${fmt(dur)}`
+  ).catch(() => {});
+
+  await sendLog(
+    guild,
+    'jailLog',
+    new EmbedBuilder()
+      .setTitle('⛓️ Jail')
+      .addFields(
+        {
+          name: 'العضو',
+          value: `${target}`
+        },
+        {
+          name: 'الإداري',
+          value: `${actor}`
+        },
+        {
+          name: 'السبب',
+          value: reason
+        },
+        {
+          name: 'المدة',
+          value: fmt(dur)
+        },
+        {
+          name: 'الوقت',
+          value: nowText()
+        }
+      )
+      .setTimestamp()
+  );
+}
+
+// ============================================================
+// TICKETS
+// ============================================================
+
+function ticketButtons(t) {
+  return new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId('ticket_claim')
+        .setLabel('📥 استلام التذكرة')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(!!t.claimedBy),
+
+      new ButtonBuilder()
+        .setCustomId('ticket_unclaim')
+        .setLabel('🔓 إلغاء الاستلام')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!t.claimedBy),
+
+      new ButtonBuilder()
+        .setCustomId('ticket_close')
+        .setLabel('🔒 إغلاق التذكرة')
+        .setStyle(ButtonStyle.Danger)
+    );
+}
+
+async function createTicket(
+  guild,
+  user
+) {
+  const cfg =
+    guildCfg(guild.id);
+
+  if (!cfg.ticketCategoryId) {
+    throw new Error(
+      'استخدم /setup-ticket-category أولًا.'
+    );
+  }
+
+  const existing =
+    Object.values(data.tickets)
+      .find(
+        t =>
+          t.guildId === guild.id &&
+          t.userId === user.id &&
+          !t.closed
+      );
+
+  if (existing) {
+    const c =
+      guild.channels.cache.get(
+        existing.channelId
+      );
+
+    if (c) return c;
+  }
+
+  const cat =
+    guild.channels.cache.get(
+      cfg.ticketCategoryId
     );
 
-    saveData();
+  if (!cat) {
+    throw new Error(
+      'Category التذاكر غير موجودة.'
+    );
+  }
 
-    const embed =
-        new EmbedBuilder()
-            .setTitle("📥 تم استلام التذكرة")
-            .setDescription(
-                `تم استلام التذكرة بواسطة <@${interaction.user.id}>.\n\n` +
-                "🔒 الإداريون الآخرون لن يستطيعوا الكتابة الآن.\n" +
-                "👑 الإداري الأعلى يستطيع الكتابة.\n" +
-                "👑 Owner يستطيع الكتابة."
-            );
+  const name =
+    `ticket-${user.username
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '')
+      .slice(0, 18) || 'user'}`;
 
-    await interaction.channel.send({
-        embeds: [embed]
+  const overwrites = [
+    {
+      id: guild.roles.everyone.id,
+      deny: [
+        PermissionsBitField.Flags.ViewChannel
+      ]
+    },
+    {
+      id: user.id,
+      allow: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.SendMessages,
+        PermissionsBitField.Flags.ReadMessageHistory
+      ]
+    }
+  ];
+
+  for (
+    const r of [
+      ...cfg.adminRoles.middle,
+      ...cfg.adminRoles.high,
+      ...cfg.adminRoles.owner
+    ]
+  ) {
+    overwrites.push({
+      id: r,
+      allow: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.SendMessages,
+        PermissionsBitField.Flags.ReadMessageHistory
+      ]
+    });
+  }
+
+  const ch =
+    await guild.channels.create({
+      name,
+      type: ChannelType.GuildText,
+      parent: cat.id,
+      permissionOverwrites:
+        overwrites
     });
 
-    return interaction.reply({
-        content:
-            "✅ تم استلام التذكرة بنجاح.",
-        ephemeral: true
-    });
+  data.tickets[ch.id] = {
+    channelId: ch.id,
+    guildId: guild.id,
+    userId: user.id,
+    claimedBy: null,
+    claimedLevel: null,
+    createdAt: Date.now(),
+    reminderSent: false,
+    firstAdminReply: false,
+    closed: false
+  };
+
+  saveData(true);
+
+  await ch.send({
+    content:
+      `${user} الإدارة موجودة هنا، انتظر من فضلك.`,
+
+    embeds: [
+      new EmbedBuilder()
+        .setTitle('🎫 تذكرة جديدة')
+        .setDescription(
+          '📥 استلام التذكرة من زر الإدارة.\n' +
+          '⏱️ إذا لم ترد الإدارة خلال 60 ثانية سيتم تذكيرك بشرح مشكلتك.'
+        )
+        .setTimestamp()
+    ],
+
+    components: [
+      ticketButtons(
+        data.tickets[ch.id]
+      )
+    ]
+  });
+
+  return ch;
 }
 
-// ======================================================
-// UNCLAIM TICKET
-// ======================================================
+async function transcript(channel) {
+  const all = [];
+  let before;
 
-async function unclaimTicket(interaction) {
+  while (true) {
+    const b =
+      await channel.messages
+        .fetch({
+          limit: 100,
+          before
+        })
+        .catch(() => null);
 
-    const ticket =
-        getTicket(interaction.channel.id);
+    if (!b?.size) break;
 
-    if (!ticket || !ticket.active) {
+    all.push(
+      ...b.values()
+    );
 
-        return interaction.reply({
-            content:
-                "❌ هذه ليست تذكرة فعالة.",
-            ephemeral: true
-        });
-    }
+    before =
+      b.last().id;
 
-    if (!ticket.claimedBy) {
+    if (b.size < 100) break;
+  }
 
-        return interaction.reply({
-            content:
-                "ℹ️ التذكرة غير مستلمة حاليًا.",
-            ephemeral: true
-        });
-    }
+  all.sort(
+    (a, b) =>
+      a.createdTimestamp -
+      b.createdTimestamp
+  );
 
-    const canUnclaim =
-        ticket.claimedBy === interaction.user.id ||
-        isAdmin(interaction.member) ||
-        await isBotOwner(interaction.user.id);
-
-    if (!canUnclaim) {
-
-        return interaction.reply({
-            content:
-                "❌ فقط مستلم التذكرة أو الإدارة العليا تستطيع إلغاء الاستلام.",
-            ephemeral: true
-        });
-    }
-
-    ticket.claimedBy = null;
-    ticket.claimedAt = null;
-
-    saveData();
-
-    await interaction.channel.send({
-        embeds: [
-            new EmbedBuilder()
-                .setTitle("↩️ تم إلغاء استلام التذكرة")
-                .setDescription(
-                    "يمكن الآن لأي إداري مؤهل استلام التذكرة من جديد."
-                )
-        ]
-    });
-
-    return interaction.reply({
-        content:
-            "✅ تم إلغاء استلام التذكرة.",
-        ephemeral: true
-    });
+  return all
+    .map(
+      m =>
+        `[${new Date(
+          m.createdTimestamp
+        ).toLocaleString(
+          'ar-EG'
+        )}] ${m.author.tag}: ` +
+        `${m.content || '[بدون نص]'}` +
+        `${
+          m.attachments.size
+            ? '\n  Attachments: ' +
+              [
+                ...m.attachments.values()
+              ]
+                .map(x => x.url)
+                .join(', ')
+            : ''
+        }`
+    )
+    .join('\n');
 }
-
-// ======================================================
-// CLOSE TICKET
-// ======================================================
 
 async function closeTicket(interaction) {
+  const t =
+    data.tickets[
+      interaction.channel.id
+    ];
 
-    const ticket =
-        getTicket(interaction.channel.id);
-
-    if (!ticket || !ticket.active) {
-
-        return interaction.reply({
-            content:
-                "❌ هذه ليست تذكرة فعالة.",
-            ephemeral: true
-        });
-    }
-
-    const allowed =
-        interaction.user.id === ticket.ownerId ||
-        isModerator(interaction.member) ||
-        await isBotOwner(interaction.user.id);
-
-    if (!allowed) {
-
-        return interaction.reply({
-            content:
-                "❌ ليس لديك صلاحية إغلاق التذكرة.",
-            ephemeral: true
-        });
-    }
-
-    ticket.active = false;
-
-    saveData();
-
-    await interaction.reply({
-        content:
-            "🔒 سيتم إغلاق التذكرة خلال 3 ثوانٍ."
-    });
-
-    setTimeout(async () => {
-
-        try {
-
-            await interaction.channel.delete(
-                "Ticket closed"
-            );
-
-            delete data.tickets[
-                interaction.channel.id
-            ];
-
-            saveData();
-
-        } catch (error) {
-
-            console.error(
-                "Ticket delete error:",
-                error.message
-            );
-        }
-
-    }, 3000);
-}
-
-// ======================================================
-// WARNING REASONS
-// ======================================================
-
-const WARNING_REASONS = [
-
-    {
-        label: "مخالفة القوانين",
-        value: "rules",
-        description: "مخالفة أحد قوانين السيرفر"
-    },
-
-    {
-        label: "إساءة / سب",
-        value: "insult",
-        description: "إساءة أو سب"
-    },
-
-    {
-        label: "إزعاج",
-        value: "spam",
-        description: "إزعاج أو سبام"
-    },
-
-    {
-        label: "مخالفة الإدارة",
-        value: "staff",
-        description: "مخالفة تعليمات الإدارة"
-    },
-
-    {
-        label: "سبب آخر",
-        value: "other",
-        description: "كتابة سبب مخصص"
-    }
-];
-
-// ======================================================
-// WARNING DURATIONS
-// ======================================================
-
-const WARNING_DURATIONS = [
-
-    {
-        label: "ساعة",
-        value: "1h"
-    },
-
-    {
-        label: "6 ساعات",
-        value: "6h"
-    },
-
-    {
-        label: "12 ساعة",
-        value: "12h"
-    },
-
-    {
-        label: "يوم",
-        value: "1d"
-    },
-
-    {
-        label: "3 أيام",
-        value: "3d"
-    },
-
-    {
-        label: "أسبوع",
-        value: "1w"
-    }
-];
-
-// ======================================================
-// JAIL REASONS
-// ======================================================
-
-const JAIL_REASONS = [
-
-    {
-        label: "مخالفة القوانين",
-        value: "rules"
-    },
-
-    {
-        label: "سبام",
-        value: "spam"
-    },
-
-    {
-        label: "إساءة",
-        value: "insult"
-    },
-
-    {
-        label: "مخالفة إدارية",
-        value: "staff"
-    },
-
-    {
-        label: "سبب آخر",
-        value: "other"
-    }
-];
-
-// ======================================================
-// JAIL DURATIONS
-// ======================================================
-
-const JAIL_DURATIONS = [
-
-    {
-        label: "5 دقائق",
-        value: "5m"
-    },
-
-    {
-        label: "15 دقيقة",
-        value: "15m"
-    },
-
-    {
-        label: "30 دقيقة",
-        value: "30m"
-    },
-
-    {
-        label: "ساعة",
-        value: "1h"
-    },
-
-    {
-        label: "6 ساعات",
-        value: "6h"
-    },
-
-    {
-        label: "يوم",
-        value: "1d"
-    }
-];
-
-// ======================================================
-// WARN COMMAND START
-// ======================================================
-
-async function startWarning(interaction) {
-
-    const member =
-        interaction.options.getMember("user");
-
-    if (!member) {
-
-        return interaction.reply({
-            content:
-                "❌ لم أستطع العثور على العضو.",
-            ephemeral: true
-        });
-    }
-
-    if (
-        member.id === interaction.user.id
-    ) {
-
-        return interaction.reply({
-            content:
-                "❌ لا يمكنك تحذير نفسك.",
-            ephemeral: true
-        });
-    }
-
-    if (
-        member.user.bot
-    ) {
-
-        return interaction.reply({
-            content:
-                "❌ لا يمكنك تحذير Bot.",
-            ephemeral: true
-        });
-    }
-
-    if (
-        member.roles.highest.position >=
-        interaction.member.roles.highest.position &&
-        !(await isBotOwner(interaction.user.id))
-    ) {
-
-        return interaction.reply({
-            content:
-                "❌ لا يمكنك معاقبة عضو أعلى منك في الرتب.",
-            ephemeral: true
-        });
-    }
-
-    const menu =
-        new StringSelectMenuBuilder()
-            .setCustomId(
-                `warn_reason_${member.id}`
-            )
-            .setPlaceholder(
-                "اختر سبب التحذير"
-            )
-            .addOptions(
-                WARNING_REASONS.map(reason =>
-                    new StringSelectMenuOptionBuilder()
-                        .setLabel(reason.label)
-                        .setValue(reason.value)
-                        .setDescription(reason.description)
-                )
-            );
-
-    const row =
-        new ActionRowBuilder()
-            .addComponents(menu);
-
+  if (!t) {
     return interaction.reply({
-        content:
-            `⚠️ اختر سبب تحذير <@${member.id}>:`,
-        components: [row],
-        ephemeral: true
+      content:
+        'هذه ليست تذكرة.',
+      ephemeral: true
     });
+  }
+
+  if (
+    !isAdmin(interaction.member) &&
+    interaction.user.id !== t.userId
+  ) {
+    return interaction.reply({
+      content:
+        'ليس لديك صلاحية الإغلاق.',
+      ephemeral: true
+    });
+  }
+
+  await interaction.reply({
+    content:
+      '🔒 يتم حفظ الـ Transcript وإغلاق التذكرة...',
+    ephemeral: true
+  });
+
+  const txt =
+    await transcript(
+      interaction.channel
+    );
+
+  const p =
+    path.join(
+      __dirname,
+      `transcript-${interaction.channel.id}-${Date.now()}.txt`
+    );
+
+  fs.writeFileSync(
+    p,
+    txt,
+    'utf8'
+  );
+
+  const ch =
+    await fetchText(
+      interaction.guild,
+      guildCfg(
+        interaction.guild.id
+      ).channels.ticketLog
+    );
+
+  if (ch) {
+    await ch.send({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle(
+            '📄 Ticket Transcript'
+          )
+          .addFields(
+            {
+              name: 'التذكرة',
+              value:
+                interaction.channel.name
+            },
+            {
+              name: 'صاحبها',
+              value:
+                `<@${t.userId}>`
+            },
+            {
+              name: 'أغلقها',
+              value:
+                `${interaction.user}`
+            },
+            {
+              name: 'الوقت',
+              value:
+                nowText()
+            }
+          )
+          .setTimestamp()
+      ],
+      files: [
+        new AttachmentBuilder(p)
+      ]
+    }).catch(() => {});
+  }
+
+  t.closed = true;
+  t.closedAt = Date.now();
+  t.closedBy =
+    interaction.user.id;
+
+  saveData(true);
+
+  setTimeout(
+    () => {
+      interaction.channel
+        .delete()
+        .catch(() => {});
+
+      fs.unlink(
+        p,
+        () => {}
+      );
+    },
+    1000
+  );
 }
 
-// ======================================================
-// SHOW WARNING DURATION
-// ======================================================
+// ============================================================
+// APPLICATIONS
+// ============================================================
 
-async function showWarningDuration(
-    interaction,
-    targetId,
-    reason
-) {
+const appQs = [
+  'اسمك؟',
+  'عمرك؟',
+  'بلدك؟',
+  'كم مدة تفاعلك؟',
+  'هل كنت إداري بسيرفر ثاني؟',
+  'خبرتك؟',
+  'بماذا راح تفيد الإدارة؟',
+  'هل راح تحط الشعار والرابط؟'
+];
 
-    const menu =
-        new StringSelectMenuBuilder()
-            .setCustomId(
-                `warn_duration_${targetId}_${reason}`
-            )
-            .setPlaceholder(
-                "اختر مدة التحذير"
-            )
-            .addOptions(
-                WARNING_DURATIONS.map(duration =>
-                    new StringSelectMenuOptionBuilder()
-                        .setLabel(duration.label)
-                        .setValue(duration.value)
-                )
-            );
-
-    const row =
-        new ActionRowBuilder()
-            .addComponents(menu);
-
-    return interaction.update({
-        content:
-            "⏱️ اختر مدة التحذير:",
-        components: [row]
-    });
+function hasTRZ(m) {
+  return [
+    m.user.username,
+    m.displayName,
+    m.nickname || ''
+  ].some(
+    v =>
+      v
+        .toLowerCase()
+        .includes('trz')
+  );
 }
 
-// ======================================================
-// CUSTOM WARNING REASON MODAL
-// ======================================================
+function appPanel() {
+  return {
+    embeds: [
+      new EmbedBuilder()
+        .setTitle(
+          '📝 التقديم للإدارة'
+        )
+        .setDescription(
+          'شرط التقديم: يجب أن يحتوي Username أو Display Name أو Nickname على TRZ.'
+        )
+        .setTimestamp()
+    ],
 
-async function showCustomWarningReason(
-    interaction,
-    targetId
-) {
-
-    const modal =
-        new ModalBuilder()
+    components: [
+      new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
             .setCustomId(
-                `warn_custom_${targetId}`
+              'app_start'
             )
-            .setTitle("سبب التحذير");
-
-    const input =
-        new TextInputBuilder()
-            .setCustomId("reason")
-            .setLabel("اكتب سبب التحذير")
-            .setPlaceholder(
-                "اكتب السبب هنا..."
+            .setLabel(
+              '📝 تقديم للإدارة'
             )
             .setStyle(
-                TextInputStyle.Paragraph
+              ButtonStyle.Primary
             )
-            .setRequired(true)
-            .setMaxLength(300);
-
-    const row =
-        new ActionRowBuilder()
-            .addComponents(input);
-
-    modal.addComponents(row);
-
-    return interaction.showModal(modal);
+        )
+    ]
+  };
 }
 
-// ======================================================
-// APPLY WARNING
-// ======================================================
-
-async function applyWarning(
-    interaction,
-    targetId,
-    reason,
-    duration
-) {
-
-    const member =
-        await interaction.guild.members
-            .fetch(targetId)
-            .catch(() => null);
-
-    if (!member) {
-
-        return interaction.update({
-            content:
-                "❌ العضو لم يعد موجودًا.",
-            components: []
-        });
-    }
-
-    const durationMs =
-        parseDuration(duration);
-
-    if (!durationMs) {
-
-        return interaction.update({
-            content:
-                "❌ مدة غير صحيحة.",
-            components: []
-        });
-    }
-
-    const warning = {
-
-        id:
-            `${Date.now()}_${Math.random()
-                .toString(36)
-                .slice(2)}`,
-
-        guildId:
-            interaction.guild.id,
-
-        userId:
-            member.id,
-
-        moderatorId:
-            interaction.user.id,
-
-        reason,
-
-        durationMs,
-
-        createdAt:
-            Date.now(),
-
-        expiresAt:
-            Date.now() + durationMs
-    };
-
-    data.warnings.push(warning);
-
-    const stats =
-        getStats(
-            interaction.guild.id,
-            interaction.user.id
-        );
-
-    stats.warnings += 1;
-
-    stats.actionPoints += 3;
-
-    saveData();
-
-    try {
-
-        await member.send(
-            `⚠️ تم تحذيرك في **${interaction.guild.name}**.\n` +
-            `السبب: ${reason}\n` +
-            `المدة: ${formatDuration(durationMs)}`
-        );
-
-    } catch (_) {}
-
-    return interaction.update({
-
-        content:
-            `✅ تم تحذير <@${member.id}> بنجاح.\n\n` +
-            `**السبب:** ${reason}\n` +
-            `**المدة:** ${formatDuration(durationMs)}`,
-
-        components: []
-    });
-}
-
-// ======================================================
-// TIMEOUT COMMAND
-// ======================================================
-
-async function executeTimeout(interaction) {
-
-    const member =
-        interaction.options.getMember("user");
-
-    const durationInput =
-        interaction.options.getString("duration");
-
-    const reason =
-        interaction.options.getString("reason") ||
-        "بدون سبب";
-
-    if (!member) {
-
-        return interaction.reply({
-            content:
-                "❌ العضو غير موجود.",
-            ephemeral: true
-        });
-    }
-
-    if (
-        member.id === interaction.user.id
-    ) {
-
-        return interaction.reply({
-            content:
-                "❌ لا يمكنك إعطاء نفسك Timeout.",
-            ephemeral: true
-        });
-    }
-
-    const durationMs =
-        parseDuration(durationInput);
-
-    if (!durationMs) {
-
-        return interaction.reply({
-            content:
-                "❌ المدة غير صحيحة.",
-            ephemeral: true
-        });
-    }
-
-    // Discord Timeout maximum = 28 days
-    if (
-        durationMs >
-        28 * 24 * 60 * 60 * 1000
-    ) {
-
-        return interaction.reply({
-            content:
-                "❌ أقصى مدة للـ Timeout هي 28 يوم.",
-            ephemeral: true
-        });
-    }
-
-    if (
-        member.roles.highest.position >=
-        interaction.member.roles.highest.position &&
-        !(await isBotOwner(interaction.user.id))
-    ) {
-
-        return interaction.reply({
-            content:
-                "❌ لا يمكنك إعطاء Timeout لعضو أعلى منك.",
-            ephemeral: true
-        });
-    }
-
-    try {
-
-        await member.timeout(
-            durationMs,
-            reason
-        );
-
-    } catch (error) {
-
-        return interaction.reply({
-            content:
-                "❌ لم أستطع إعطاء Timeout للعضو. تأكد من صلاحيات البوت وترتيب الرتب.",
-            ephemeral: true
-        });
-    }
-
-    const stats =
-        getStats(
-            interaction.guild.id,
-            interaction.user.id
-        );
-
-    stats.timeouts += 1;
-
-    stats.actionPoints += 3;
-
-    saveData();
-
-    try {
-
-        await member.send(
-            `⏳ تم إعطاؤك Timeout في **${interaction.guild.name}**.\n` +
-            `المدة: ${formatDuration(durationMs)}\n` +
-            `السبب: ${reason}`
-        );
-
-    } catch (_) {}
-
-    return interaction.reply({
-        content:
-            `✅ تم إعطاء <@${member.id}> تايم.\n\n` +
-            `⏱️ **المدة:** ${formatDuration(durationMs)}\n` +
-            `📝 **السبب:** ${reason}`
-    });
-}
-
-// ======================================================
-// SETUP JAIL
-// ======================================================
-
-async function setupJail(interaction) {
-
-    if (
-        !(await isBotOwner(interaction.user.id))
-    ) {
-
-        return interaction.reply({
-            content:
-                "❌ هذا الأمر للـ Owner فقط.",
-            ephemeral: true
-        });
-    }
-
-    const guild =
-        interaction.guild;
-
-    const config =
-        getGuildConfig(guild.id);
-
-    let role = null;
-
-    if (config.jailRoleId) {
-
-        role =
-            guild.roles.cache.get(
-                config.jailRoleId
-            );
-    }
-
-    if (!role) {
-
-        role =
-            await guild.roles.create({
-                name: "سجين",
-                color: 0x555555,
-                reason: "Jail system"
-            });
-
-        config.jailRoleId =
-            role.id;
-
-        saveData();
-    }
-
-    return interaction.reply({
-        content:
-            `✅ تم تجهيز رتبة السجن: ${role}\n\n` +
-            "⚠️ مهم: رتبة البوت يجب أن تكون أعلى من رتبة السجين."
-    });
-}
-
-// ======================================================
-// START JAIL
-// ======================================================
-
-async function startJail(interaction) {
-
-    const member =
-        interaction.options.getMember("user");
-
-    if (!member) {
-
-        return interaction.reply({
-            content:
-                "❌ العضو غير موجود.",
-            ephemeral: true
-        });
-    }
-
-    if (
-        member.id === interaction.user.id
-    ) {
-
-        return interaction.reply({
-            content:
-                "❌ لا يمكنك سجن نفسك.",
-            ephemeral: true
-        });
-    }
-
-    const config =
-        getGuildConfig(
-            interaction.guild.id
-        );
-
-    let role = null;
-
-    if (config.jailRoleId) {
-
-        role =
-            interaction.guild.roles.cache.get(
-                config.jailRoleId
-            );
-    }
-
-    if (!role) {
-
-        return interaction.reply({
-            content:
-                "❌ لم يتم إعداد السجن بعد.\nاستخدم `/setup-jail` أولًا.",
-            ephemeral: true
-        });
-    }
-
-    const menu =
-        new StringSelectMenuBuilder()
-            .setCustomId(
-                `jail_reason_${member.id}`
-            )
-            .setPlaceholder(
-                "اختر سبب السجن"
-            )
-            .addOptions(
-                JAIL_REASONS.map(reason =>
-                    new StringSelectMenuOptionBuilder()
-                        .setLabel(reason.label)
-                        .setValue(reason.value)
+function appModal1() {
+  return new ModalBuilder()
+    .setCustomId('app_m1')
+    .setTitle(
+      'التقديم 1/2'
+    )
+    .addComponents(
+      ...[
+        1,
+        2,
+        3,
+        4,
+        5
+      ].map(
+        i =>
+          new ActionRowBuilder()
+            .addComponents(
+              new TextInputBuilder()
+                .setCustomId(
+                  `q${i}`
                 )
-            );
-
-    return interaction.reply({
-
-        content:
-            `🔒 اختر سبب سجن <@${member.id}>:`,
-
-        components: [
-            new ActionRowBuilder()
-                .addComponents(menu)
-        ],
-
-        ephemeral: true
-    });
-}
-
-// ======================================================
-// SHOW JAIL DURATION
-// ======================================================
-
-async function showJailDuration(
-    interaction,
-    targetId,
-    reason
-) {
-
-    const menu =
-        new StringSelectMenuBuilder()
-            .setCustomId(
-                `jail_duration_${targetId}_${reason}`
-            )
-            .setPlaceholder(
-                "اختر مدة السجن"
-            )
-            .addOptions(
-                JAIL_DURATIONS.map(duration =>
-                    new StringSelectMenuOptionBuilder()
-                        .setLabel(duration.label)
-                        .setValue(duration.value)
+                .setLabel(
+                  appQs[i - 1]
                 )
-            );
-
-    return interaction.update({
-
-        content:
-            "⏱️ اختر مدة السجن:",
-
-        components: [
-            new ActionRowBuilder()
-                .addComponents(menu)
-        ]
-    });
-}
-
-// ======================================================
-// APPLY JAIL
-// ======================================================
-
-async function applyJail(
-    interaction,
-    targetId,
-    reason,
-    duration
-) {
-
-    const member =
-        await interaction.guild.members
-            .fetch(targetId)
-            .catch(() => null);
-
-    if (!member) {
-
-        return interaction.update({
-            content:
-                "❌ العضو غير موجود.",
-            components: []
-        });
-    }
-
-    const config =
-        getGuildConfig(
-            interaction.guild.id
-        );
-
-    const role =
-        interaction.guild.roles.cache.get(
-            config.jailRoleId
-        );
-
-    if (!role) {
-
-        return interaction.update({
-            content:
-                "❌ رتبة السجن غير موجودة.",
-            components: []
-        });
-    }
-
-    const durationMs =
-        parseDuration(duration);
-
-    if (!durationMs) {
-
-        return interaction.update({
-            content:
-                "❌ المدة غير صحيحة.",
-            components: []
-        });
-    }
-
-    try {
-
-        await member.roles.add(
-            role,
-            `Jail: ${reason}`
-        );
-
-    } catch (error) {
-
-        return interaction.update({
-            content:
-                "❌ لم أستطع إعطاء رتبة السجن. تأكد من ترتيب الرتب.",
-            components: []
-        });
-    }
-
-    data.jails.push({
-
-        id:
-            `${Date.now()}_${Math.random()
-                .toString(36)
-                .slice(2)}`,
-
-        guildId:
-            interaction.guild.id,
-
-        userId:
-            member.id,
-
-        moderatorId:
-            interaction.user.id,
-
-        reason,
-
-        roleId:
-            role.id,
-
-        createdAt:
-            Date.now(),
-
-        expiresAt:
-            Date.now() + durationMs
-    });
-
-    saveData();
-
-    try {
-
-        await member.send(
-            `🔒 تم سجنك في **${interaction.guild.name}**.\n` +
-            `السبب: ${reason}\n` +
-            `المدة: ${formatDuration(durationMs)}`
-        );
-
-    } catch (_) {}
-
-    return interaction.update({
-
-        content:
-            `✅ تم سجن <@${member.id}>.\n\n` +
-            `🔒 **السبب:** ${reason}\n` +
-            `⏱️ **المدة:** ${formatDuration(durationMs)}`,
-
-        components: []
-    });
-}
-
-// ======================================================
-// CLEAN EXPIRED WARNINGS
-// ======================================================
-
-function cleanupWarnings() {
-
-    const now =
-        Date.now();
-
-    const before =
-        data.warnings.length;
-
-    data.warnings =
-        data.warnings.filter(
-            warning =>
-                warning.expiresAt > now
-        );
-
-    if (
-        data.warnings.length !== before
-    ) {
-        saveData();
-    }
-}
-
-// ======================================================
-// CLEAN EXPIRED JAILS
-// ======================================================
-
-async function cleanupJails() {
-
-    if (
-        !Array.isArray(data.jails)
-    ) {
-        return;
-    }
-
-    const now =
-        Date.now();
-
-    const expired =
-        data.jails.filter(
-            jail =>
-                jail.expiresAt <= now
-        );
-
-    if (!expired.length) {
-        return;
-    }
-
-    for (const jail of expired) {
-
-        try {
-
-            const guild =
-                client.guilds.cache.get(
-                    jail.guildId
-                );
-
-            if (!guild) {
-                continue;
-            }
-
-            const member =
-                await guild.members
-                    .fetch(jail.userId)
-                    .catch(() => null);
-
-            if (!member) {
-                continue;
-            }
-
-            if (
-                member.roles.cache.has(
-                    jail.roleId
+                .setStyle(
+                  i === 5
+                    ? TextInputStyle.Paragraph
+                    : TextInputStyle.Short
                 )
-            ) {
-
-                await member.roles.remove(
-                    jail.roleId,
-                    "Jail expired"
-                );
-            }
-
-        } catch (error) {
-
-            console.error(
-                "Jail cleanup error:",
-                error.message
-            );
-        }
-    }
-
-    data.jails =
-        data.jails.filter(
-            jail =>
-                jail.expiresAt > now
-        );
-
-    saveData();
-}
-
-// ======================================================
-// CLEANUP TICKETS
-// ======================================================
-
-async function cleanupTickets() {
-
-    let changed = false;
-
-    for (
-        const [channelId, ticket]
-        of Object.entries(data.tickets)
-    ) {
-
-        const guild =
-            client.guilds.cache.get(
-                ticket.guildId
-            );
-
-        if (!guild) {
-            delete data.tickets[channelId];
-            changed = true;
-            continue;
-        }
-
-        const channel =
-            guild.channels.cache.get(
-                channelId
-            );
-
-        if (!channel) {
-            delete data.tickets[channelId];
-            changed = true;
-        }
-    }
-
-    if (changed) {
-        saveData();
-    }
-}
-
-// ======================================================
-// COMMANDS
-// ======================================================
-
-function buildCommands() {
-
-    return [
-
-        new SlashCommandBuilder()
-            .setName("ping")
-            .setDescription("فحص حالة البوت"),
-
-        new SlashCommandBuilder()
-            .setName("warn")
-            .setDescription("إعطاء تحذير لعضو")
-            .addUserOption(option =>
-                option
-                    .setName("user")
-                    .setDescription("العضو")
-                    .setRequired(true)
-            ),
-
-        new SlashCommandBuilder()
-            .setName("timeout")
-            .setDescription("إعطاء Timeout لعضو")
-            .addUserOption(option =>
-                option
-                    .setName("user")
-                    .setDescription("العضو")
-                    .setRequired(true)
+                .setRequired(true)
+                .setMaxLength(
+                  i === 5
+                    ? 500
+                    : 120
+                )
             )
-            .addStringOption(option =>
-                option
-                    .setName("duration")
-                    .setDescription("المدة مثال: 10m أو 1h أو 1d")
-                    .setRequired(true)
-            )
-            .addStringOption(option =>
-                option
-                    .setName("reason")
-                    .setDescription("سبب التايم")
-                    .setRequired(false)
-            ),
-
-        new SlashCommandBuilder()
-            .setName("setup-jail")
-            .setDescription("تجهيز نظام السجن - Owner فقط"),
-
-        new SlashCommandBuilder()
-            .setName("jail")
-            .setDescription("سجن عضو")
-            .addUserOption(option =>
-                option
-                    .setName("user")
-                    .setDescription("العضو")
-                    .setRequired(true)
-            ),
-
-        new SlashCommandBuilder()
-            .setName("ticket-panel")
-            .setDescription("إرسال لوحة التذاكر"),
-
-        new SlashCommandBuilder()
-            .setName("setup-ticket-category")
-            .setDescription("تحديد كاتيجوري التذاكر")
-            .addChannelOption(option =>
-                option
-                    .setName("category")
-                    .setDescription("كاتيجوري التذاكر")
-                    .addChannelTypes(
-                        ChannelType.GuildCategory
-                    )
-                    .setRequired(true)
-            )
-    ].map(command =>
-        command.toJSON()
+      )
     );
 }
 
-// ======================================================
-// REGISTER COMMANDS
-// ======================================================
-
-async function registerCommands() {
-
-    try {
-
-        const rest =
-            new REST({
-                version: "10"
-            }).setToken(TOKEN);
-
-        const commands =
-            buildCommands();
-
-        await rest.put(
-            Routes.applicationCommands(
-                client.user.id
-            ),
-            {
-                body: commands
-            }
-        );
-
-        console.log(
-            "✅ Slash commands registered."
-        );
-
-    } catch (error) {
-
-        console.error(
-            "❌ Command registration error:",
-            error
-        );
-    }
+function appModal2() {
+  return new ModalBuilder()
+    .setCustomId('app_m2')
+    .setTitle(
+      'التقديم 2/2'
+    )
+    .addComponents(
+      ...[
+        6,
+        7,
+        8
+      ].map(
+        i =>
+          new ActionRowBuilder()
+            .addComponents(
+              new TextInputBuilder()
+                .setCustomId(
+                  `q${i}`
+                )
+                .setLabel(
+                  appQs[i - 1]
+                )
+                .setStyle(
+                  TextInputStyle.Paragraph
+                )
+                .setRequired(true)
+                .setMaxLength(1000)
+            )
+      )
+    );
 }
 
-// ======================================================
-// READY
-// ======================================================
+async function sendApplication(
+  guild,
+  uid
+) {
+  const cfg =
+    guildCfg(guild.id);
 
-client.once(
-    "ready",
-    async () => {
+  const c =
+    await fetchText(
+      guild,
+      cfg.channels.applicationRoom
+    );
 
-        console.log(
-            "===================================="
+  if (!c) {
+    throw new Error(
+      'روم التقديم غير مخصص. استخدم /setup-channel.'
+    );
+  }
+
+  const a =
+    data.applications[
+      `${guild.id}:${uid}`
+    ];
+
+  const em =
+    new EmbedBuilder()
+      .setTitle(
+        '📝 طلب تقديم جديد'
+      )
+      .setDescription(
+        `المتقدم: <@${uid}>`
+      )
+      .addFields(
+        appQs.map(
+          (q, i) => ({
+            name: q,
+            value:
+              String(
+                a.answers[
+                  `q${i + 1}`
+                ] || '—'
+              ).slice(
+                0,
+                1024
+              )
+          })
+        )
+      )
+      .setTimestamp();
+
+  const m =
+    await c.send({
+      embeds: [em],
+      components: [
+        new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(
+                `app_ok:${guild.id}:${uid}`
+              )
+              .setLabel(
+                '✅ قبول'
+              )
+              .setStyle(
+                ButtonStyle.Success
+              ),
+
+            new ButtonBuilder()
+              .setCustomId(
+                `app_no:${guild.id}:${uid}`
+              )
+              .setLabel(
+                '❌ رفض'
+              )
+              .setStyle(
+                ButtonStyle.Danger
+              )
+          )
+      ]
+    });
+
+  a.messageId =
+    m.id;
+
+  saveData(true);
+}
+
+// ============================================================
+// ANTI SPAM
+// ============================================================
+
+const spamMap =
+  new Map();
+
+async function antiSpam(message) {
+  if (
+    !message.guild ||
+    message.author.bot ||
+    !message.content
+  ) {
+    return false;
+  }
+
+  const key =
+    `${message.guild.id}:${message.author.id}`;
+
+  const now =
+    Date.now();
+
+  const arr =
+    spamMap.get(key) || [];
+
+  arr.push({
+    id: message.id,
+    content:
+      message.content
+        .trim()
+        .toLowerCase(),
+    ch: message.channel.id,
+    t: now
+  });
+
+  while (
+    arr.length > 20 ||
+    now - arr[0].t > 15000
+  ) {
+    arr.shift();
+  }
+
+  spamMap.set(
+    key,
+    arr
+  );
+
+  if (
+    countEmoji(
+      message.content
+    ) > 10
+  ) {
+    await message
+      .delete()
+      .catch(() => {});
+
+    const m =
+      await message.channel
+        .send(
+          `🚨 كفاية سبام ايموجي ${message.author}`
+        )
+        .catch(() => null);
+
+    if (m) {
+      setTimeout(
+        () =>
+          m.delete()
+            .catch(
+              () => {}
+            ),
+        5000
+      );
+    }
+
+    await sendLog(
+      message.guild,
+      'spamLog',
+      new EmbedBuilder()
+        .setTitle(
+          '🚨 Emoji Spam'
+        )
+        .addFields(
+          {
+            name: 'العضو',
+            value:
+              `${message.author}`
+          },
+          {
+            name: 'الروم',
+            value:
+              `${message.channel}`
+          },
+          {
+            name: 'عدد الإيموجي',
+            value:
+              String(
+                countEmoji(
+                  message.content
+                )
+              )
+          },
+          {
+            name: 'المحتوى',
+            value:
+              message.content.slice(
+                0,
+                1000
+              )
+          },
+          {
+            name: 'الوقت',
+            value:
+              nowText()
+          }
+        )
+        .setTimestamp()
+    );
+
+    return true;
+  }
+
+  const same =
+    arr.filter(
+      x =>
+        x.ch ===
+          message.channel.id &&
+        x.content ===
+          message.content
+            .trim()
+            .toLowerCase()
+    );
+
+  if (
+    same.length > 5
+  ) {
+    let deleted = 0;
+
+    for (
+      const x of same
+    ) {
+      const m =
+        await message.channel.messages
+          .fetch(x.id)
+          .catch(() => null);
+
+      if (
+        m?.author.id ===
+          message.author.id &&
+        await m
+          .delete()
+          .then(
+            () => true
+          )
+          .catch(
+            () => false
+          )
+      ) {
+        deleted++;
+      }
+    }
+
+    spamMap.delete(key);
+
+    const m =
+      await message.channel
+        .send(
+          `🚨 كفاية سبام رسائل ${message.author}`
+        )
+        .catch(() => null);
+
+    if (m) {
+      setTimeout(
+        () =>
+          m.delete()
+            .catch(
+              () => {}
+            ),
+        5000
+      );
+    }
+
+    await sendLog(
+      message.guild,
+      'spamLog',
+      new EmbedBuilder()
+        .setTitle(
+          '🚨 Message Spam'
+        )
+        .addFields(
+          {
+            name: 'العضو',
+            value:
+              `${message.author}`
+          },
+          {
+            name: 'الروم',
+            value:
+              `${message.channel}`
+          },
+          {
+            name: 'العدد',
+            value:
+              String(
+                same.length
+              )
+          },
+          {
+            name: 'المحذوف',
+            value:
+              String(
+                deleted
+              )
+          },
+          {
+            name: 'المحتوى',
+            value:
+              message.content.slice(
+                0,
+                1000
+              )
+          },
+          {
+            name: 'الوقت',
+            value:
+              nowText()
+          }
+        )
+        .setTimestamp()
+    );
+
+    return true;
+  }
+
+  return false;
+}
+
+// ============================================================
+// SLASH COMMANDS
+// ============================================================
+
+const commands = [
+  new SlashCommandBuilder()
+    .setName('ping')
+    .setDescription('اختبار البوت'),
+
+  new SlashCommandBuilder()
+    .setName('warn')
+    .setDescription('تحذير عضو')
+    .addUserOption(
+      o =>
+        o.setName('user')
+          .setDescription('العضو')
+          .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('timeout')
+    .setDescription('Timeout')
+    .addUserOption(
+      o =>
+        o.setName('user')
+          .setDescription('العضو')
+          .setRequired(true)
+    )
+    .addStringOption(
+      o =>
+        o.setName('duration')
+          .setDescription(
+            '30m / 1h'
+          )
+          .setRequired(true)
+    )
+    .addStringOption(
+      o =>
+        o.setName('reason')
+          .setDescription(
+            'السبب'
+          )
+          .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('setup-jail')
+    .setDescription(
+      'إعداد السجن'
+    ),
+
+  new SlashCommandBuilder()
+    .setName('jail')
+    .setDescription(
+      'سجن عضو'
+    )
+    .addUserOption(
+      o =>
+        o.setName('user')
+          .setDescription(
+            'العضو'
+          )
+          .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('ban')
+    .setDescription(
+      'Ban'
+    )
+    .addUserOption(
+      o =>
+        o.setName('user')
+          .setDescription(
+            'العضو'
+          )
+          .setRequired(true)
+    )
+    .addStringOption(
+      o =>
+        o.setName('reason')
+          .setDescription(
+            'السبب'
+          )
+          .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('ticket-panel')
+    .setDescription(
+      'إرسال لوحة التذاكر'
+    ),
+
+  new SlashCommandBuilder()
+    .setName(
+      'setup-ticket-category'
+    )
+    .setDescription(
+      'تحديد Category التذاكر'
+    )
+    .addChannelOption(
+      o =>
+        o.setName(
+          'category'
+        )
+          .setDescription(
+            'Category'
+          )
+          .addChannelTypes(
+            ChannelType.GuildCategory
+          )
+          .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName(
+      'application-panel'
+    )
+    .setDescription(
+      'إرسال لوحة التقديم'
+    ),
+
+  new SlashCommandBuilder()
+    .setName(
+      'setup-channel'
+    )
+    .setDescription(
+      'إعداد روم'
+    )
+    .addStringOption(
+      o =>
+        o.setName(
+          'type'
+        )
+          .setDescription(
+            'النوع'
+          )
+          .setRequired(true)
+          .addChoices(
+            ...[
+              [
+                'welcome',
+                'welcome'
+              ],
+              [
+                'leave',
+                'leave'
+              ],
+              [
+                'joinleave-log',
+                'joinLeaveLog'
+              ],
+              [
+                'spam-log',
+                'spamLog'
+              ],
+              [
+                'moderation-log',
+                'moderationLog'
+              ],
+              [
+                'jail-log',
+                'jailLog'
+              ],
+              [
+                'ticket-log',
+                'ticketLog'
+              ],
+              [
+                'application-room',
+                'applicationRoom'
+              ],
+              [
+                'application-log',
+                'applicationLog'
+              ],
+              [
+                'complaint-log',
+                'complaintLog'
+              ]
+            ].map(
+              ([name, value]) => ({
+                name,
+                value
+              })
+            )
+          )
+    )
+    .addChannelOption(
+      o =>
+        o.setName(
+          'channel'
+        )
+          .setDescription(
+            'الروم'
+          )
+          .setRequired(true)
+          .addChannelTypes(
+            ChannelType.GuildText,
+            ChannelType.GuildAnnouncement
+          )
+    ),
+
+  new SlashCommandBuilder()
+    .setName(
+      'setup-role'
+    )
+    .setDescription(
+      'إعداد رتبة'
+    )
+    .addStringOption(
+      o =>
+        o.setName(
+          'type'
+        )
+          .setDescription(
+            'النوع'
+          )
+          .setRequired(true)
+          .addChoices(
+            {
+              name:
+                'application-role-1',
+              value:
+                'role1'
+            },
+            {
+              name:
+                'application-role-2',
+              value:
+                'role2'
+            },
+            {
+              name:
+                'jail-role',
+              value:
+                'jail'
+            }
+          )
+    )
+    .addRoleOption(
+      o =>
+        o.setName(
+          'role'
+        )
+          .setDescription(
+            'الرتبة'
+          )
+          .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName(
+      'setup-admin-level'
+    )
+    .setDescription(
+      'إعداد مستوى الإدارة'
+    )
+    .addStringOption(
+      o =>
+        o.setName(
+          'level'
+        )
+          .setDescription(
+            'المستوى'
+          )
+          .setRequired(true)
+          .addChoices(
+            {
+              name:
+                'middle',
+              value:
+                'middle'
+            },
+            {
+              name:
+                'high',
+              value:
+                'high'
+            },
+            {
+              name:
+                'owner',
+              value:
+                'owner'
+            }
+          )
+    )
+    .addRoleOption(
+      o =>
+        o.setName(
+          'role1'
+        )
+          .setDescription(
+            'رتبة 1'
+          )
+          .setRequired(true)
+    )
+    .addRoleOption(
+      o =>
+        o.setName(
+          'role2'
+        )
+          .setDescription(
+            'رتبة 2'
+          )
+          .setRequired(true)
+    )
+    .addRoleOption(
+      o =>
+        o.setName(
+          'role3'
+        )
+          .setDescription(
+            'رتبة 3'
+          )
+          .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName(
+      'paston'
+    )
+    .setDescription(
+      'رصيد Baston أو إضافة Baston للأونر'
+    )
+    .addUserOption(
+      o =>
+        o.setName(
+          'user'
+        )
+          .setDescription(
+            'عضو'
+          )
+    )
+    .addIntegerOption(
+      o =>
+        o.setName(
+          'amount'
+        )
+          .setDescription(
+            'مبلغ الإضافة - للأونر فقط'
+          )
+          .setMinValue(1)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('shop')
+    .setDescription(
+      'متجر Baston'
+    ),
+
+  new SlashCommandBuilder()
+    .setName('dm')
+    .setDescription('DM')
+    .addUserOption(
+      o =>
+        o.setName(
+          'user'
+        )
+          .setDescription(
+            'عضو'
+          )
+          .setRequired(true)
+    )
+    .addStringOption(
+      o =>
+        o.setName(
+          'message'
+        )
+          .setDescription(
+            'الرسالة'
+          )
+          .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('dms')
+    .setDescription(
+      'DM لعدة أعضاء'
+    )
+    .addStringOption(
+      o =>
+        o.setName(
+          'users'
+        )
+          .setDescription(
+            'IDs'
+          )
+          .setRequired(true)
+    )
+    .addStringOption(
+      o =>
+        o.setName(
+          'message'
+        )
+          .setDescription(
+            'الرسالة'
+          )
+          .setRequired(true)
+    )
+].map(c => c.toJSON());
+
+async function registerCommands() {
+  const rest =
+    new REST({
+      version: '10'
+    }).setToken(TOKEN);
+
+  await rest.put(
+    Routes.applicationCommands(
+      client.user.id
+    ),
+    {
+      body: commands
+    }
+  );
+
+  console.log(
+    `✅ registered ${commands.length} commands`
+  );
+}
+
+// ============================================================
+// ARABIC COMMANDS
+// ============================================================
+
+async function handleArabic(message) {
+  const c =
+    message.content.trim();
+
+  const words =
+    c.split(/\s+/);
+
+  const cmd =
+    words[0];
+
+  // --------------------
+  // TIMEOUT
+  // --------------------
+
+  if (['تايم'].includes(cmd)) {
+    if (!isAdmin(message.member)) {
+      return message.reply(
+        '❌ هذا الأمر للإدارة فقط.'
+      );
+    }
+
+    const target =
+      message.mentions.members.first();
+
+    if (!target) {
+      return message.reply(
+        '❌ مثال: `تايم @User 30m سبام`'
+      );
+    }
+
+    const dur =
+      parseDuration(
+        words[2]
+      );
+
+    if (!dur) {
+      return message.reply(
+        '❌ المدة غير صحيحة: 10m / 30m / 1h / 6h / 1d / 7d'
+      );
+    }
+
+    try {
+      await issueTimeout(
+        message.guild,
+        message.member,
+        target,
+        dur,
+        words.slice(3).join(' ') ||
+          'بدون سبب'
+      );
+
+      await message.reply(
+        `✅ تم Timeout لـ ${target} لمدة ${fmt(dur)}.`
+      );
+    } catch (e) {
+      await message.reply(
+        `❌ ${e.message}`
+      );
+    }
+
+    return true;
+  }
+
+  // --------------------
+  // WARNING
+  // --------------------
+
+  if (
+    ['ت', 'تحذير'].includes(cmd)
+  ) {
+    if (!isAdmin(message.member)) {
+      return message.reply(
+        '❌ هذا الأمر للإدارة فقط.'
+      );
+    }
+
+    const target =
+      message.mentions.members.first();
+
+    if (!target) {
+      return message.reply(
+        '❌ مثال: `ت @User سبام`'
+      );
+    }
+
+    try {
+      await issueWarning(
+        message.guild,
+        message.member,
+        target,
+        words.slice(2).join(' ') ||
+          'مخالفة القوانين',
+        86400000
+      );
+
+      await message.reply(
+        `⚠️ تم تحذير ${target}.`
+      );
+    } catch (e) {
+      await message.reply(
+        `❌ ${e.message}`
+      );
+    }
+
+    return true;
+  }
+
+  // --------------------
+  // JAIL
+  // --------------------
+
+  if (cmd === 'سجن') {
+    if (!isHigh(message.member)) {
+      return message.reply(
+        '❌ السجن للعليا والأونر وServer Owner وBot Owner فقط.'
+      );
+    }
+
+    const target =
+      message.mentions.members.first();
+
+    const dur =
+      parseDuration(
+        words[2] || '30m'
+      );
+
+    if (!target || !dur) {
+      return message.reply(
+        '❌ مثال: `سجن @User 30m سبام`'
+      );
+    }
+
+    try {
+      await issueJail(
+        message.guild,
+        message.member,
+        target,
+        dur,
+        words.slice(3).join(' ') ||
+          'مخالفة القوانين'
+      );
+
+      await message.reply(
+        `⛓️ تم سجن ${target} لمدة ${fmt(dur)}.`
+      );
+    } catch (e) {
+      await message.reply(
+        `❌ ${e.message}`
+      );
+    }
+
+    return true;
+  }
+
+  // --------------------
+  // BAN
+  // --------------------
+
+  if (
+    cmd === 'باند' ||
+    cmd === 'تف'
+  ) {
+    if (!isAdmin(message.member)) {
+      return message.reply(
+        '❌ هذا الأمر للإدارة فقط.'
+      );
+    }
+
+    const target =
+      message.mentions.members.first();
+
+    if (!target) {
+      return message.reply(
+        '❌ مثال: `باند @User السبب`'
+      );
+    }
+
+    try {
+      await issueBan(
+        message.guild,
+        message.member,
+        target,
+        words.slice(2).join(' ') ||
+          'بدون سبب'
+      );
+
+      await message.reply(
+        `🔨 تم باند ${target}.`
+      );
+    } catch (e) {
+      await message.reply(
+        `❌ ${e.message}`
+      );
+    }
+
+    return true;
+  }
+
+  // --------------------
+  // PASTON
+  // --------------------
+
+  if (cmd === 'paston') {
+    const u =
+      message.mentions.users.first() ||
+      message.author;
+
+    const amount =
+      Number(
+        words.find(
+          x => /^\d+$/.test(x)
+        )
+      );
+
+    if (amount) {
+      if (!isTop(message.member)) {
+        return message.reply(
+          '❌ إضافة Baston للأونر فقط.'
+        );
+      }
+
+      userData(
+        message.guild.id,
+        u.id
+      ).baston += amount;
+
+      saveData(true);
+
+      return message.reply(
+        `✅ تمت إضافة **${amount} Baston** إلى ${u}.`
+      );
+    }
+
+    return message.reply(
+      `💰 رصيد ${u}: **${userData(
+        message.guild.id,
+        u.id
+      ).baston} Baston**`
+    );
+  }
+
+  // --------------------
+  // POINTS
+  // --------------------
+
+  if (
+    cmd === '$نقاط' ||
+    cmd === '!نقاط' ||
+    c === '$$نقاطي'
+  ) {
+    const u =
+      userData(
+        message.guild.id,
+        message.author.id
+      );
+
+    const em =
+      new EmbedBuilder()
+        .setTitle(
+          '⭐ النقاط'
+        )
+        .addFields(
+          {
+            name:
+              'Chat XP',
+            value:
+              String(u.xp),
+            inline: true
+          },
+          {
+            name:
+              'Voice XP',
+            value:
+              String(u.voiceXp),
+            inline: true
+          },
+          {
+            name:
+              'Chat Points',
+            value:
+              String(
+                points(u.xp)
+              ),
+            inline: true
+          },
+          {
+            name:
+              'Action Points',
+            value:
+              String(
+                u.actionPoints
+              ),
+            inline: true
+          },
+          {
+            name:
+              'Total Points',
+            value:
+              String(
+                totalPoints(u)
+              ),
+            inline: true
+          }
         );
 
-        console.log(
-            `✅ Logged in as ${client.user.tag}`
+    if (
+      c === '$$نقاطي' &&
+      isAdmin(message.member)
+    ) {
+      em.addFields(
+        {
+          name:
+            'Warnings Given',
+          value:
+            String(
+              u.warnings
+            ),
+          inline: true
+        },
+        {
+          name:
+            'Timeouts Given',
+          value:
+            String(
+              u.timeouts
+            ),
+          inline: true
+        },
+        {
+          name:
+            'Tickets Claimed',
+          value:
+            String(
+              u.ticketsClaimed
+            ),
+          inline: true
+        }
+      );
+    }
+
+    return message.reply({
+      embeds: [em]
+    });
+  }
+
+  // --------------------
+  // SHOP
+  // --------------------
+
+  if (cmd === '$متجر') {
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle(
+            '🛒 متجر Baston'
+          )
+          .setDescription(
+            'المتجر جاهز لإضافة المنتجات والأسعار.'
+          )
+          .setTimestamp()
+      ]
+    });
+  }
+
+  // --------------------
+  // COMPLAINT
+  // --------------------
+
+  if (
+    cmd === 'كاد' &&
+    words[1] === 'شكاوى'
+  ) {
+    const target =
+      message.mentions.users.first();
+
+    if (!target) {
+      return message.reply(
+        '❌ منشن الإداري.'
+      );
+    }
+
+    const reason =
+      words.slice(3).join(' ') ||
+      'بدون سبب';
+
+    const key =
+      `${message.guild.id}:${message.author.id}:${Date.now()}`;
+
+    data.complaints[key] = {
+      guildId:
+        message.guild.id,
+      authorId:
+        message.author.id,
+      targetId:
+        target.id,
+      reason,
+      status:
+        'pending'
+    };
+
+    saveData(true);
+
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle(
+            '⚠️ تأكيد الشكوى'
+          )
+          .setDescription(
+            'هل تريد إرسال الشكوى؟'
+          )
+          .addFields(
+            {
+              name:
+                'ضد',
+              value:
+                `${target}`
+            },
+            {
+              name:
+                'السبب',
+              value:
+                reason
+            }
+          )
+      ],
+      components: [
+        new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(
+                `complaint_yes:${key}`
+              )
+              .setLabel(
+                '✅ تأكيد'
+              )
+              .setStyle(
+                ButtonStyle.Danger
+              ),
+
+            new ButtonBuilder()
+              .setCustomId(
+                `complaint_no:${key}`
+              )
+              .setLabel(
+                '❌ إلغاء'
+              )
+              .setStyle(
+                ButtonStyle.Secondary
+              )
+          )
+      ]
+    });
+  }
+
+  if (c.startsWith('/')) {
+    return false;
+  }
+
+  return false;
+}
+
+// ============================================================
+// JOIN / LEAVE
+// ============================================================
+
+client.on(
+  'guildMemberAdd',
+  async m => {
+    const c =
+      guildCfg(
+        m.guild.id
+      ).channels;
+
+    const w =
+      await fetchText(
+        m.guild,
+        c.welcome
+      );
+
+    if (w) {
+      await w.send(
+        `👋 أهلًا ${m} في السيرفر!`
+      ).catch(() => {});
+    }
+
+    await sendLog(
+      m.guild,
+      'joinLeaveLog',
+      new EmbedBuilder()
+        .setTitle(
+          '📥 Join'
+        )
+        .addFields(
+          {
+            name:
+              'العضو',
+            value:
+              `${m} (${m.user.tag})`
+          },
+          {
+            name:
+              'ID',
+            value:
+              m.id
+          },
+          {
+            name:
+              'الوقت',
+            value:
+              nowText()
+          }
+        )
+        .setTimestamp()
+    );
+  }
+);
+
+client.on(
+  'guildMemberRemove',
+  async m => {
+    const c =
+      guildCfg(
+        m.guild.id
+      ).channels;
+
+    const w =
+      await fetchText(
+        m.guild,
+        c.leave
+      );
+
+    if (w) {
+      await w.send(
+        `👋 غادر السيرفر ${m}`
+      ).catch(() => {});
+    }
+
+    await sendLog(
+      m.guild,
+      'joinLeaveLog',
+      new EmbedBuilder()
+        .setTitle(
+          '📤 Leave'
+        )
+        .addFields(
+          {
+            name:
+              'العضو',
+            value:
+              m.user?.tag ||
+              m.id
+          },
+          {
+            name:
+              'ID',
+            value:
+              m.id
+          },
+          {
+            name:
+              'الوقت',
+            value:
+              nowText()
+          }
+        )
+        .setTimestamp()
+    );
+  }
+);
+
+// ============================================================
+// MAIN MESSAGE EVENT
+// ============================================================
+
+client.on(
+  'messageCreate',
+  async m => {
+    try {
+      if (
+        !m.guild ||
+        m.author.bot
+      ) {
+        return;
+      }
+
+      const t =
+        data.tickets[
+          m.channel.id
+        ];
+
+      if (
+        t &&
+        !t.closed &&
+        t.claimedBy &&
+        m.author.id !== t.userId
+      ) {
+        const allowed =
+          m.author.id ===
+            t.claimedBy ||
+          isBotOwner(
+            m.author.id
+          ) ||
+          level(m.member) >
+            t.claimedLevel;
+
+        if (!allowed) {
+          await m.delete()
+            .catch(
+              () => {}
+            );
+
+          return;
+        }
+
+        if (!t.firstAdminReply) {
+          t.firstAdminReply =
+            true;
+
+          saveData();
+
+          await m.channel.send(
+            `👨‍💼 كمل يا إداري مع <@${t.userId}>`
+          ).catch(() => {});
+        }
+      }
+
+      // CAPTCHA
+      const tr =
+        data.temp[
+          `captcha:${m.author.id}`
+        ];
+
+      if (
+        tr &&
+        Date.now() -
+          tr.createdAt <
+          300000 &&
+        m.content.trim() ===
+          tr.code
+      ) {
+        tr.stage =
+          'confirm';
+
+        saveData();
+
+        const u =
+          await client.users
+            .fetch(tr.to)
+            .catch(
+              () => null
+            );
+
+        if (u) {
+          await m.reply({
+            content:
+              `🔐 تحويل ${tr.amount} Baston إلى ${u}. تأكد؟`,
+
+            components: [
+              new ActionRowBuilder()
+                .addComponents(
+                  new ButtonBuilder()
+                    .setCustomId(
+                      `pay_yes:${m.author.id}`
+                    )
+                    .setLabel(
+                      '✅ تأكيد'
+                    )
+                    .setStyle(
+                      ButtonStyle.Success
+                    ),
+
+                  new ButtonBuilder()
+                    .setCustomId(
+                      `pay_no:${m.author.id}`
+                    )
+                    .setLabel(
+                      '❌ إلغاء'
+                    )
+                    .setStyle(
+                      ButtonStyle.Danger
+                    )
+                )
+            ]
+          });
+        }
+      }
+
+      if (
+        await antiSpam(m)
+      ) {
+        return;
+      }
+
+      const ud =
+        userData(
+          m.guild.id,
+          m.author.id
         );
 
-        console.log(
-            `🌐 Servers: ${client.guilds.cache.size}`
-        );
+      ud.xp += 10;
 
-        console.log(
-            "===================================="
-        );
+      saveData();
 
-        client.user.setPresence({
+      // !نقاط
+      if (
+        m.content.startsWith(
+          PREFIX
+        )
+      ) {
+        const p =
+          m.content
+            .slice(
+              PREFIX.length
+            )
+            .trim();
 
-            activities: [
+        if (
+          p === 'نقاط'
+        ) {
+          const u =
+            userData(
+              m.guild.id,
+              m.author.id
+            );
 
-                {
+          return m.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setTitle(
+                  '⭐ نقاطك'
+                )
+                .addFields(
+                  {
                     name:
-                        `${client.guilds.cache.size} Servers`,
+                      'Chat XP',
+                    value:
+                      String(
+                        u.xp
+                      ),
+                    inline: true
+                  },
+                  {
+                    name:
+                      'Voice XP',
+                    value:
+                      String(
+                        u.voiceXp
+                      ),
+                    inline: true
+                  },
+                  {
+                    name:
+                      'Chat Points',
+                    value:
+                      String(
+                        points(u.xp)
+                      ),
+                    inline: true
+                  },
+                  {
+                    name:
+                      'Action Points',
+                    value:
+                      String(
+                        u.actionPoints
+                      ),
+                    inline: true
+                  },
+                  {
+                    name:
+                      'Total Points',
+                    value:
+                      String(
+                        totalPoints(u)
+                      ),
+                    inline: true
+                  }
+                )
+            ]
+          });
+        }
 
-                    type:
-                        ActivityType.Watching
-                }
+        if (
+          p === 'متجر'
+        ) {
+          return m.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setTitle(
+                  '🛒 متجر Baston'
+                )
+                .setDescription(
+                  'المتجر جاهز لإضافة المنتجات والأسعار.'
+                )
+            ]
+          });
+        }
+      }
+
+      await handleArabic(m);
+
+    } catch (e) {
+      console.error(
+        'messageCreate',
+        e
+      );
+
+      await dmOwner(
+        'Message Error',
+        e
+      );
+    }
+  }
+);
+
+// ============================================================
+// INTERACTIONS
+// ============================================================
+
+client.on(
+  'interactionCreate',
+  async i => {
+    try {
+
+      // ========================================================
+      // SLASH COMMANDS
+      // ========================================================
+
+      if (
+        i.isChatInputCommand()
+      ) {
+        const m =
+          i.member;
+
+        const g =
+          i.guild;
+
+        if (!g) {
+          return i.reply({
+            content:
+              'هذا الأمر داخل السيرفر فقط.',
+            ephemeral: true
+          });
+        }
+
+        // PING
+        if (
+          i.commandName ===
+          'ping'
+        ) {
+          return i.reply(
+            `🏓 Pong ${client.ws.ping}ms`
+          );
+        }
+
+        // WARN
+        if (
+          i.commandName ===
+          'warn'
+        ) {
+          if (!isAdmin(m)) {
+            return i.reply({
+              content:
+                '❌ الإدارة فقط.',
+              ephemeral: true
+            });
+          }
+
+          const t =
+            i.options.getMember(
+              'user'
+            );
+
+          if (!t) {
+            return i.reply({
+              content:
+                '❌ العضو غير موجود.',
+              ephemeral: true
+            });
+          }
+
+          if (
+            !canPunish(
+              m,
+              t
+            )
+          ) {
+            return i.reply({
+              content:
+                '❌ لا يمكنك معاقبة إداري أعلى منك أو بنفس مستواك.',
+              ephemeral: true
+            });
+          }
+
+          return i.reply({
+            content:
+              'اختر سبب التحذير:',
+
+            ephemeral:
+              true,
+
+            components: [
+              new ActionRowBuilder()
+                .addComponents(
+                  new StringSelectMenuBuilder()
+                    .setCustomId(
+                      `wr:${t.id}`
+                    )
+                    .setPlaceholder(
+                      'اختر السبب'
+                    )
+                    .addOptions(
+                      ...Object.entries({
+                        ...warnReasons,
+                        other:
+                          'سبب آخر'
+                      }).map(
+                        ([value, label]) =>
+                          new StringSelectMenuOptionBuilder()
+                            .setLabel(
+                              label
+                            )
+                            .setValue(
+                              value
+                            )
+                      )
+                    )
+                )
+            ]
+          });
+        }
+
+        // TIMEOUT
+        if (
+          i.commandName ===
+          'timeout'
+        ) {
+          if (!isAdmin(m)) {
+            return i.reply({
+              content:
+                '❌ الإدارة فقط.',
+              ephemeral: true
+            });
+          }
+
+          const t =
+            i.options.getMember(
+              'user'
+            );
+
+          const d =
+            parseDuration(
+              i.options.getString(
+                'duration'
+              )
+            );
+
+          if (
+            !t ||
+            !d
+          ) {
+            return i.reply({
+              content:
+                '❌ العضو أو المدة غير صحيحة.',
+              ephemeral: true
+            });
+          }
+
+          try {
+            await issueTimeout(
+              g,
+              m,
+              t,
+              d,
+              i.options.getString(
+                'reason'
+              )
+            );
+
+            return i.reply(
+              `✅ تم Timeout لـ ${t} لمدة ${fmt(d)}.`
+            );
+          } catch (e) {
+            return i.reply({
+              content:
+                `❌ ${e.message}`,
+              ephemeral:
+                true
+            });
+          }
+        }
+
+        // SETUP JAIL
+        if (
+          i.commandName ===
+          'setup-jail'
+        ) {
+          if (!isTop(m)) {
+            return i.reply({
+              content:
+                '❌ المستوى الأعلى فقط.',
+              ephemeral:
+                true
+            });
+          }
+
+          return i.reply(
+            `✅ تم إعداد رتبة السجن: ${await setupJail(g)}`
+          );
+        }
+
+        // JAIL
+        if (
+          i.commandName ===
+          'jail'
+        ) {
+          if (!isHigh(m)) {
+            return i.reply({
+              content:
+                '❌ العليا أو أعلى فقط.',
+              ephemeral:
+                true
+            });
+          }
+
+          const t =
+            i.options.getMember(
+              'user'
+            );
+
+          if (!t) {
+            return i.reply({
+              content:
+                '❌ غير موجود.',
+              ephemeral:
+                true
+            });
+          }
+
+          if (
+            !canPunish(
+              m,
+              t
+            )
+          ) {
+            return i.reply({
+              content:
+                '❌ لا يمكنك سجن هذا العضو.',
+              ephemeral:
+                true
+            });
+          }
+
+          return i.reply({
+            content:
+              'اختر مدة السجن:',
+
+            ephemeral:
+              true,
+
+            components: [
+              new ActionRowBuilder()
+                .addComponents(
+                  new StringSelectMenuBuilder()
+                    .setCustomId(
+                      `jd:${t.id}`
+                    )
+                    .setPlaceholder(
+                      'مدة السجن'
+                    )
+                    .addOptions(
+                      ...[
+                        '10m',
+                        '30m',
+                        '1h',
+                        '6h',
+                        '1d',
+                        '3d',
+                        '1w'
+                      ].map(
+                        x =>
+                          new StringSelectMenuOptionBuilder()
+                            .setLabel(
+                              x
+                            )
+                            .setValue(
+                              x
+                            )
+                      )
+                    )
+                )
+            ]
+          });
+        }
+
+        // BAN
+        if (
+          i.commandName ===
+          'ban'
+        ) {
+          if (!isAdmin(m)) {
+            return i.reply({
+              content:
+                '❌ الإدارة فقط.',
+              ephemeral:
+                true
+            });
+          }
+
+          const t =
+            i.options.getMember(
+              'user'
+            );
+
+          if (!t) {
+            return i.reply({
+              content:
+                '❌ غير موجود.',
+              ephemeral:
+                true
+            });
+          }
+
+          try {
+            await issueBan(
+              g,
+              m,
+              t,
+              i.options.getString(
+                'reason'
+              )
+            );
+
+            return i.reply(
+              `🔨 تم باند ${t}.`
+            );
+          } catch (e) {
+            return i.reply({
+              content:
+                `❌ ${e.message}`,
+              ephemeral:
+                true
+            });
+          }
+        }
+
+        // SETUP TICKET CATEGORY
+        if (
+          i.commandName ===
+          'setup-ticket-category'
+        ) {
+          if (!isTop(m)) {
+            return i.reply({
+              content:
+                '❌ المستوى الأعلى فقط.',
+              ephemeral:
+                true
+            });
+          }
+
+          guildCfg(
+            g.id
+          ).ticketCategoryId =
+            i.options
+              .getChannel(
+                'category'
+              )
+              .id;
+
+          saveData(true);
+
+          return i.reply(
+            '✅ تم حفظ Category التذاكر.'
+          );
+        }
+
+        // TICKET PANEL
+        if (
+          i.commandName ===
+          'ticket-panel'
+        ) {
+          if (!isAdmin(m)) {
+            return i.reply({
+              content:
+                '❌ الإدارة فقط.',
+              ephemeral:
+                true
+            });
+          }
+
+          await i.channel.send({
+            embeds: [
+              new EmbedBuilder()
+                .setTitle(
+                  '🎫 الدعم الفني'
+                )
+                .setDescription(
+                  'اضغط لفتح تذكرة خاصة.'
+                )
             ],
 
-            status:
-                "online"
-        });
-
-        await refreshApplicationOwner();
-
-        await registerCommands();
-
-        console.log(
-            "🚀 Bot is ready."
-        );
-
-        setInterval(
-            () => {
-                cleanupWarnings();
-            },
-            30 * 1000
-        );
-
-        setInterval(
-            async () => {
-                await cleanupJails();
-            },
-            30 * 1000
-        );
-
-        setInterval(
-            async () => {
-                await cleanupTickets();
-            },
-            60 * 1000
-        );
-    }
-);
-
-// ======================================================
-// MESSAGE CREATE
-// ======================================================
-
-client.on(
-    "messageCreate",
-    async message => {
-
-        if (
-            message.author.bot
-        ) {
-            return;
-        }
-
-        // ==============================================
-        // XP
-        // ==============================================
-
-        handleMessageXP(message);
-
-        // ==============================================
-        // $نقاط
-        // ==============================================
-
-        if (
-            message.content.trim() === "$نقاط"
-        ) {
-
-            if (!message.guild) {
-                return;
-            }
-
-            const stats =
-                getStats(
-                    message.guild.id,
-                    message.author.id
-                );
-
-            const totalPoints =
-                getTotalPoints(
-                    message.guild.id,
-                    message.author.id
-                );
-
-            const embed =
-                new EmbedBuilder()
-                    .setTitle("📊 إحصائيات النقاط")
-                    .setDescription(
-                        `إحصائيات <@${message.author.id}>`
+            components: [
+              new ActionRowBuilder()
+                .addComponents(
+                  new ButtonBuilder()
+                    .setCustomId(
+                      'ticket_open'
                     )
-                    .addFields(
+                    .setLabel(
+                      '🎫 فتح تذكرة'
+                    )
+                    .setStyle(
+                      ButtonStyle.Primary
+                    )
+                )
+            ]
+          });
 
-                        {
-                            name:
-                                "⚠️ التحذيرات",
+          return i.reply({
+            content:
+              '✅ تم إرسال اللوحة.',
+            ephemeral:
+              true
+          });
+        }
 
-                            value:
-                                `${stats.warnings}`,
-
-                            inline: true
-                        },
-
-                        {
-                            name:
-                                "⏳ الـ Timeouts",
-
-                            value:
-                                `${stats.timeouts}`,
-
-                            inline: true
-                        },
-
-                        {
-                            name:
-                                "🎫 التذاكر المستلمة",
-
-                            value:
-                                `${stats.ticketsClaimed}`,
-
-                            inline: true
-                        },
-
-                        {
-                            name:
-                                "⭐ XP",
-
-                            value:
-                                `${stats.xp}`,
-
-                            inline: true
-                        },
-
-                        {
-                            name:
-                                "💰 النقاط",
-
-                            value:
-                                `${totalPoints}`,
-
-                            inline: true
-                        }
-                    );
-
-            return message.reply({
-                embeds: [embed]
+        // APPLICATION PANEL
+        if (
+          i.commandName ===
+          'application-panel'
+        ) {
+          if (!isTop(m)) {
+            return i.reply({
+              content:
+                '❌ المستوى الأعلى فقط.',
+              ephemeral:
+                true
             });
+          }
+
+          guildCfg(
+            g.id
+          ).channels.applicationRoom =
+            i.channel.id;
+
+          saveData(true);
+
+          await i.channel.send(
+            appPanel()
+          );
+
+          return i.reply({
+            content:
+              '✅ تم إرسال لوحة التقديم.',
+            ephemeral:
+              true
+          });
         }
 
-        // ==============================================
-        // !ping
-        // ==============================================
-
+        // SETUP CHANNEL
         if (
-            message.content === "!ping"
+          i.commandName ===
+          'setup-channel'
         ) {
+          if (!isTop(m)) {
+            return i.reply({
+              content:
+                '❌ المستوى الأعلى فقط.',
+              ephemeral:
+                true
+            });
+          }
 
-            return message.reply(
-                "🏓 Pong!"
-            );
+          guildCfg(
+            g.id
+          ).channels[
+            i.options.getString(
+              'type'
+            )
+          ] =
+            i.options.getChannel(
+              'channel'
+            ).id;
+
+          saveData(true);
+
+          return i.reply({
+            content:
+              '✅ تم الحفظ.',
+            ephemeral:
+              true
+          });
         }
 
-        // ==============================================
-        // TICKET CLAIM LOCK
-        // ==============================================
+        // SETUP ROLE
+        if (
+          i.commandName ===
+          'setup-role'
+        ) {
+          if (!isTop(m)) {
+            return i.reply({
+              content:
+                '❌ المستوى الأعلى فقط.',
+              ephemeral:
+                true
+            });
+          }
 
-        const ticket =
-            getTicket(
-                message.channel.id
+          const c =
+            guildCfg(
+              g.id
             );
 
-        if (
-            ticket &&
-            ticket.active &&
-            ticket.claimedBy
-        ) {
+          const r =
+            i.options.getRole(
+              'role'
+            );
 
-            const allowed =
-                await canWriteInClaimedTicket(
-                    message.member,
-                    ticket
+          const type =
+            i.options.getString(
+              'type'
+            );
+
+          if (type === 'role1') {
+            c.applicationRoles.role1 =
+              r.id;
+          } else if (
+            type === 'role2'
+          ) {
+            c.applicationRoles.role2 =
+              r.id;
+          } else {
+            c.jailRoleId =
+              r.id;
+          }
+
+          saveData(true);
+
+          return i.reply({
+            content:
+              '✅ تم الحفظ.',
+            ephemeral:
+              true
+          });
+        }
+
+        // SETUP ADMIN LEVEL
+        if (
+          i.commandName ===
+          'setup-admin-level'
+        ) {
+          if (!isTop(m)) {
+            return i.reply({
+              content:
+                '❌ المستوى الأعلى فقط.',
+              ephemeral:
+                true
+            });
+          }
+
+          const c =
+            guildCfg(
+              g.id
+            );
+
+          c.adminRoles[
+            i.options.getString(
+              'level'
+            )
+          ] = [
+            i.options.getRole(
+              'role1'
+            ).id,
+
+            i.options.getRole(
+              'role2'
+            ).id,
+
+            i.options.getRole(
+              'role3'
+            ).id
+          ];
+
+          saveData(true);
+
+          return i.reply({
+            content:
+              '✅ تم حفظ هرم الإدارة.',
+            ephemeral:
+              true
+          });
+        }
+
+        // PASTON
+        if (
+          i.commandName ===
+          'paston'
+        ) {
+          const u =
+            i.options.getUser(
+              'user'
+            ) ||
+            i.user;
+
+          const amount =
+            i.options.getInteger(
+              'amount'
+            );
+
+          if (amount) {
+            if (!isTop(m)) {
+              return i.reply({
+                content:
+                  '❌ إضافة Baston للأونر فقط.',
+                ephemeral:
+                  true
+              });
+            }
+
+            userData(
+              g.id,
+              u.id
+            ).baston +=
+              amount;
+
+            saveData(true);
+
+            return i.reply(
+              `✅ تمت إضافة **${amount} Baston** إلى ${u}. الرصيد الجديد: **${userData(
+                g.id,
+                u.id
+              ).baston} Baston**`
+            );
+          }
+
+          return i.reply(
+            `💰 رصيد ${u}: **${userData(
+              g.id,
+              u.id
+            ).baston} Baston**`
+          );
+        }
+
+        // SHOP
+        if (
+          i.commandName ===
+          'shop'
+        ) {
+          return i.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setTitle(
+                  '🛒 متجر Baston'
+                )
+                .setDescription(
+                  'المتجر جاهز لإضافة العناصر والأسعار.'
+                )
+            ]
+          });
+        }
+
+        // DM
+        if (
+          i.commandName ===
+          'dm'
+        ) {
+          if (!isAdmin(m)) {
+            return i.reply({
+              content:
+                '❌ الإدارة فقط.',
+              ephemeral:
+                true
+            });
+          }
+
+          const u =
+            i.options.getUser(
+              'user'
+            );
+
+          await u.send(
+            i.options.getString(
+              'message'
+            )
+          ).catch(
+            () => {
+              throw new Error(
+                'تعذر إرسال DM.'
+              );
+            }
+          );
+
+          return i.reply({
+            content:
+              '✅ تم إرسال DM.',
+            ephemeral:
+              true
+          });
+        }
+
+        // DMS
+        if (
+          i.commandName ===
+          'dms'
+        ) {
+          if (!isAdmin(m)) {
+            return i.reply({
+              content:
+                '❌ الإدارة فقط.',
+              ephemeral:
+                true
+            });
+          }
+
+          let ok = 0;
+          let fail = 0;
+
+          for (
+            const id of
+              i.options
+                .getString(
+                  'users'
+                )
+                .split(/\s+/)
+          ) {
+            const u =
+              await client.users
+                .fetch(id)
+                .catch(
+                  () => null
                 );
 
-            if (!allowed) {
-
-                try {
-
-                    await message.delete();
-
-                    const warning =
-                        await message.channel.send(
-                            `🔒 <@${message.author.id}> التذكرة مستلمة بواسطة <@${ticket.claimedBy}>.\n` +
-                            `لا يمكنك الكتابة فيها حاليًا.`
-                        );
-
-                    setTimeout(
-                        () => {
-                            warning.delete()
-                                .catch(() => {});
-                        },
-                        3000
-                    );
-
-                } catch (_) {}
-
-                return;
+            if (
+              !u ||
+              !(await u.send(
+                i.options.getString(
+                  'message'
+                )
+              ).then(
+                () => true
+              ).catch(
+                () => false
+              ))
+            ) {
+              fail++;
+            } else {
+              ok++;
             }
+          }
+
+          return i.reply({
+            content:
+              `✅ ${ok} تم | ❌ ${fail} فشل`,
+            ephemeral:
+              true
+          });
         }
-    }
-);
-
-// ======================================================
-// INTERACTION CREATE
-// ======================================================
-
-client.on(
-    "interactionCreate",
-    async interaction => {
-
-        try {
-
-            // ==================================================
-            // SLASH COMMANDS
-            // ==================================================
-
-            if (
-                interaction.isChatInputCommand()
-            ) {
-
-                // ==============================================
-                // PING
-                // ==============================================
-
-                if (
-                    interaction.commandName ===
-                    "ping"
-                ) {
-
-                    return interaction.reply(
-                        "🏓 Pong!"
-                    );
-                }
-
-                // ==============================================
-                // WARN
-                // ==============================================
-
-                if (
-                    interaction.commandName ===
-                    "warn"
-                ) {
-
-                    if (
-                        !isModerator(
-                            interaction.member
-                        )
-                    ) {
-
-                        return interaction.reply({
-                            content:
-                                "❌ ليس لديك صلاحية استخدام التحذير.",
-                            ephemeral: true
-                        });
-                    }
-
-                    return startWarning(
-                        interaction
-                    );
-                }
-
-                // ==============================================
-                // TIMEOUT
-                // ==============================================
-
-                if (
-                    interaction.commandName ===
-                    "timeout"
-                ) {
-
-                    if (
-                        !isModerator(
-                            interaction.member
-                        )
-                    ) {
-
-                        return interaction.reply({
-                            content:
-                                "❌ ليس لديك صلاحية استخدام Timeout.",
-                            ephemeral: true
-                        });
-                    }
-
-                    return executeTimeout(
-                        interaction
-                    );
-                }
-
-                // ==============================================
-                // SETUP JAIL
-                // ==============================================
-
-                if (
-                    interaction.commandName ===
-                    "setup-jail"
-                ) {
-
-                    return setupJail(
-                        interaction
-                    );
-                }
-
-                // ==============================================
-                // JAIL
-                // ==============================================
-
-                if (
-                    interaction.commandName ===
-                    "jail"
-                ) {
-
-                    if (
-                        !isModerator(
-                            interaction.member
-                        )
-                    ) {
-
-                        return interaction.reply({
-                            content:
-                                "❌ ليس لديك صلاحية استخدام السجن.",
-                            ephemeral: true
-                        });
-                    }
-
-                    return startJail(
-                        interaction
-                    );
-                }
-
-                // ==============================================
-                // TICKET PANEL
-                // ==============================================
-
-                if (
-                    interaction.commandName ===
-                    "ticket-panel"
-                ) {
-
-                    if (
-                        !isModerator(
-                            interaction.member
-                        )
-                    ) {
-
-                        return interaction.reply({
-                            content:
-                                "❌ هذا الأمر للإدارة فقط.",
-                            ephemeral: true
-                        });
-                    }
-
-                    const config =
-                        getGuildConfig(
-                            interaction.guild.id
-                        );
-
-                    config.ticketPanelChannelId =
-                        interaction.channel.id;
-
-                    const panel =
-                        await interaction.channel.send(
-                            createTicketPanel()
-                        );
-
-                    config.ticketPanelMessageId =
-                        panel.id;
-
-                    saveData();
-
-                    return interaction.reply({
-                        content:
-                            "✅ تم إنشاء لوحة التذاكر.",
-                        ephemeral: true
-                    });
-                }
-
-                // ==============================================
-                // SETUP TICKET CATEGORY
-                // ==============================================
-
-                if (
-                    interaction.commandName ===
-                    "setup-ticket-category"
-                ) {
-
-                    if (
-                        !(await isBotOwner(
-                            interaction.user.id
-                        ))
-                    ) {
-
-                        return interaction.reply({
-                            content:
-                                "❌ هذا الأمر للـ Owner فقط.",
-                            ephemeral: true
-                        });
-                    }
-
-                    const category =
-                        interaction.options.getChannel(
-                            "category"
-                        );
-
-                    const config =
-                        getGuildConfig(
-                            interaction.guild.id
-                        );
-
-                    config.ticketCategoryId =
-                        category.id;
-
-                    saveData();
-
-                    return interaction.reply({
-                        content:
-                            `✅ تم تحديد كاتيجوري التذاكر: ${category}`,
-                        ephemeral: true
-                    });
-                }
-            }
-
-            // ==================================================
-            // BUTTONS
-            // ==================================================
-
-            if (
-                interaction.isButton()
-            ) {
-
-                // ==============================================
-                // CREATE TICKET
-                // ==============================================
-
-                if (
-                    interaction.customId ===
-                    "ticket_create"
-                ) {
-
-                    return createTicket(
-                        interaction
-                    );
-                }
-
-                // ==============================================
-                // CLAIM
-                // ==============================================
-
-                if (
-                    interaction.customId ===
-                    "ticket_claim"
-                ) {
-
-                    return claimTicket(
-                        interaction
-                    );
-                }
-
-                // ==============================================
-                // UNCLAIM
-                // ==============================================
-
-                if (
-                    interaction.customId ===
-                    "ticket_unclaim"
-                ) {
-
-                    return unclaimTicket(
-                        interaction
-                    );
-                }
-
-                // ==============================================
-                // CLOSE
-                // ==============================================
-
-                if (
-                    interaction.customId ===
-                    "ticket_close"
-                ) {
-
-                    return closeTicket(
-                        interaction
-                    );
-                }
-            }
-
-            // ==================================================
-            // SELECT MENUS
-            // ==================================================
-
-            if (
-                interaction.isStringSelectMenu()
-            ) {
-
-                // ==============================================
-                // WARNING REASON
-                // ==============================================
-
-                if (
-                    interaction.customId
-                        .startsWith("warn_reason_")
-                ) {
-
-                    const targetId =
-                        interaction.customId
-                            .replace(
-                                "warn_reason_",
-                                ""
-                            );
-
-                    const reason =
-                        interaction.values[0];
-
-                    if (
-                        reason === "other"
-                    ) {
-
-                        return showCustomWarningReason(
-                            interaction,
-                            targetId
-                        );
-                    }
-
-                    return showWarningDuration(
-                        interaction,
-                        targetId,
-                        reason
-                    );
-                }
-
-                // ==============================================
-                // WARNING DURATION
-                // ==============================================
-
-                if (
-                    interaction.customId
-                        .startsWith("warn_duration_")
-                ) {
-
-                    const parts =
-                        interaction.customId
-                            .split("_");
-
-                    const targetId =
-                        parts[2];
-
-                    const reason =
-                        parts.slice(3).join("_");
-
-                    const duration =
-                        interaction.values[0];
-
-                    return applyWarning(
-                        interaction,
-                        targetId,
-                        reason,
-                        duration
-                    );
-                }
-
-                // ==============================================
-                // JAIL REASON
-                // ==============================================
-
-                if (
-                    interaction.customId
-                        .startsWith("jail_reason_")
-                ) {
-
-                    const targetId =
-                        interaction.customId
-                            .replace(
-                                "jail_reason_",
-                                ""
-                            );
-
-                    const reason =
-                        interaction.values[0];
-
-                    if (
-                        reason === "other"
-                    ) {
-
-                        const modal =
-                            new ModalBuilder()
-                                .setCustomId(
-                                    `jail_custom_${targetId}`
-                                )
-                                .setTitle(
-                                    "سبب السجن"
-                                );
-
-                        const input =
-                            new TextInputBuilder()
-                                .setCustomId("reason")
-                                .setLabel(
-                                    "اكتب سبب السجن"
-                                )
-                                .setPlaceholder(
-                                    "اكتب السبب هنا..."
-                                )
-                                .setStyle(
-                                    TextInputStyle.Paragraph
-                                )
-                                .setRequired(true)
-                                .setMaxLength(300);
-
-                        modal.addComponents(
-                            new ActionRowBuilder()
-                                .addComponents(input)
-                        );
-
-                        return interaction.showModal(
-                            modal
-                        );
-                    }
-
-                    return showJailDuration(
-                        interaction,
-                        targetId,
-                        reason
-                    );
-                }
-
-                // ==============================================
-                // JAIL DURATION
-                // ==============================================
-
-                if (
-                    interaction.customId
-                        .startsWith("jail_duration_")
-                ) {
-
-                    const parts =
-                        interaction.customId
-                            .split("_");
-
-                    const targetId =
-                        parts[2];
-
-                    const reason =
-                        parts.slice(3).join("_");
-
-                    const duration =
-                        interaction.values[0];
-
-                    return applyJail(
-                        interaction,
-                        targetId,
-                        reason,
-                        duration
-                    );
-                }
-            }
-
-            // ==================================================
-            // MODALS
-            // ==================================================
-
-            if (
-                interaction.isModalSubmit()
-            ) {
-
-                // ==============================================
-                // CUSTOM WARNING
-                // ==============================================
-
-                if (
-                    interaction.customId
-                        .startsWith("warn_custom_")
-                ) {
-
-                    const targetId =
-                        interaction.customId
-                            .replace(
-                                "warn_custom_",
-                                ""
-                            );
-
-                    const reason =
-                        interaction.fields.getTextInputValue(
-                            "reason"
-                        );
-
-                    return showWarningDuration(
-                        interaction,
-                        targetId,
-                        encodeURIComponent(reason)
-                    );
-                }
-
-                // ==============================================
-                // CUSTOM JAIL
-                // ==============================================
-
-                if (
-                    interaction.customId
-                        .startsWith("jail_custom_")
-                ) {
-
-                    const targetId =
-                        interaction.customId
-                            .replace(
-                                "jail_custom_",
-                                ""
-                            );
-
-                    const reason =
-                        interaction.fields.getTextInputValue(
-                            "reason"
-                        );
-
-                    return showJailDuration(
-                        interaction,
-                        targetId,
-                        encodeURIComponent(reason)
-                    );
-                }
-            }
-
-        } catch (error) {
-
-            console.error(
-                "❌ Interaction error:",
-                error
+      }
+
+      // ========================================================
+      // BUTTONS
+      // ========================================================
+
+      if (i.isButton()) {
+
+        // TICKET OPEN
+        if (
+          i.customId ===
+          'ticket_open'
+        ) {
+          const c =
+            await createTicket(
+              i.guild,
+              i.user
             );
 
-            try {
-
-                if (
-                    interaction.replied ||
-                    interaction.deferred
-                ) {
-
-                    await interaction.followUp({
-                        content:
-                            "❌ حصل خطأ غير متوقع.",
-                        ephemeral: true
-                    });
-
-                } else {
-
-                    await interaction.reply({
-                        content:
-                            "❌ حصل خطأ غير متوقع.",
-                        ephemeral: true
-                    });
-                }
-
-            } catch (_) {}
+          return i.reply({
+            content:
+              `🎫 ${c}`,
+            ephemeral:
+              true
+          });
         }
+
+        // TICKET CLAIM
+        if (
+          i.customId ===
+          'ticket_claim'
+        ) {
+          const t =
+            data.tickets[
+              i.channel.id
+            ];
+
+          if (!t) {
+            return i.reply({
+              content:
+                'ليست تذكرة.',
+              ephemeral:
+                true
+            });
+          }
+
+          if (!isAdmin(i.member)) {
+            return i.reply({
+              content:
+                '❌ الإدارة فقط.',
+              ephemeral:
+                true
+            });
+          }
+
+          if (t.claimedBy) {
+            return i.reply({
+              content:
+                'التذكرة مستلمة بالفعل.',
+              ephemeral:
+                true
+            });
+          }
+
+          t.claimedBy =
+            i.user.id;
+
+          t.claimedLevel =
+            level(i.member);
+
+          userData(
+            i.guild.id,
+            i.user.id
+          ).actionPoints += 3;
+
+          userData(
+            i.guild.id,
+            i.user.id
+          ).ticketsClaimed++;
+
+          saveData(true);
+
+          for (
+            const member of
+              i.guild.members.cache.values()
+          ) {
+            if (
+              !isAdmin(member)
+            ) continue;
+
+            const allow =
+              member.id ===
+                i.user.id ||
+              isBotOwner(
+                member.id
+              ) ||
+              level(member) >
+                t.claimedLevel;
+
+            await i.channel
+              .permissionOverwrites
+              .edit(
+                member.id,
+                {
+                  ViewChannel:
+                    true,
+                  ReadMessageHistory:
+                    true,
+                  SendMessages:
+                    allow
+                }
+              )
+              .catch(() => {});
+          }
+
+          await i.message
+            .edit({
+              components: [
+                ticketButtons(t)
+              ]
+            })
+            .catch(() => {});
+
+          await i.channel.send(
+            `📥 تم استلام التذكرة بواسطة ${i.user}.`
+          );
+
+          return i.reply({
+            content:
+              '✅ تم الاستلام.',
+            ephemeral:
+              true
+          });
+        }
+
+        // TICKET UNCLAIM
+        if (
+          i.customId ===
+          'ticket_unclaim'
+        ) {
+          const t =
+            data.tickets[
+              i.channel.id
+            ];
+
+          if (!t?.claimedBy) {
+            return i.reply({
+              content:
+                'التذكرة غير مستلمة.',
+              ephemeral:
+                true
+            });
+          }
+
+          if (
+            i.user.id !==
+              t.claimedBy &&
+            !isBotOwner(
+              i.user.id
+            ) &&
+            level(i.member) <=
+              t.claimedLevel
+          ) {
+            return i.reply({
+              content:
+                '❌ لا تملك صلاحية الإلغاء.',
+              ephemeral:
+                true
+            });
+          }
+
+          t.claimedBy =
+            null;
+
+          t.claimedLevel =
+            null;
+
+          const c =
+            guildCfg(
+              i.guild.id
+            );
+
+          for (
+            const r of [
+              ...c.adminRoles.middle,
+              ...c.adminRoles.high,
+              ...c.adminRoles.owner
+            ]
+          ) {
+            await i.channel
+              .permissionOverwrites
+              .edit(
+                r,
+                {
+                  ViewChannel:
+                    true,
+                  SendMessages:
+                    true,
+                  ReadMessageHistory:
+                    true
+                }
+              )
+              .catch(() => {});
+          }
+
+          saveData(true);
+
+          await i.message
+            .edit({
+              components: [
+                ticketButtons(t)
+              ]
+            })
+            .catch(() => {});
+
+          return i.reply(
+            '🔓 تم إلغاء الاستلام.'
+          );
+        }
+
+        // TICKET CLOSE
+        if (
+          i.customId ===
+          'ticket_close'
+        ) {
+          return closeTicket(i);
+        }
+
+        // APPLICATION START
+        if (
+          i.customId ===
+          'app_start'
+        ) {
+          if (
+            !hasTRZ(i.member)
+          ) {
+            return i.reply({
+              content:
+                '❌ يجب أن يحتوي اسمك على TRZ.',
+              ephemeral:
+                true
+            });
+          }
+
+          const key =
+            `${i.guild.id}:${i.user.id}`;
+
+          data.applications[key] ||=
+            {
+              guildId:
+                i.guild.id,
+              userId:
+                i.user.id,
+              status:
+                'pending',
+              answers: {},
+              createdAt:
+                Date.now()
+            };
+
+          if (
+            data.applications[key]
+              .status !==
+            'pending'
+          ) {
+            data.applications[key] =
+              {
+                guildId:
+                  i.guild.id,
+                userId:
+                  i.user.id,
+                status:
+                  'pending',
+                answers: {},
+                createdAt:
+                  Date.now()
+              };
+          }
+
+          saveData(true);
+
+          return i.showModal(
+            appModal1()
+          );
+        }
+
+        // APPLICATION ACCEPT / REJECT
+        if (
+          i.customId.startsWith(
+            'app_ok:'
+          ) ||
+          i.customId.startsWith(
+            'app_no:'
+          )
+        ) {
+          if (
+            !isTop(i.member)
+          ) {
+            return i.reply({
+              content:
+                '❌ الأونر فقط.',
+              ephemeral:
+                true
+            });
+          }
+
+          const [
+            ,
+            gid,
+            uid
+          ] =
+            i.customId.split(
+              ':'
+            );
+
+          const a =
+            data.applications[
+              `${gid}:${uid}`
+            ];
+
+          if (
+            !a ||
+            a.status !==
+              'pending'
+          ) {
+            return i.reply({
+              content:
+                '⚠️ التقديم تم التعامل معه مسبقًا.',
+              ephemeral:
+                true
+            });
+          }
+
+          const target =
+            await i.guild.members
+              .fetch(uid)
+              .catch(() => null);
+
+          if (!target) {
+            return i.reply({
+              content:
+                '❌ المتقدم غير موجود.',
+              ephemeral:
+                true
+            });
+          }
+
+          const c =
+            guildCfg(gid);
+
+          if (
+            i.customId.startsWith(
+              'app_ok:'
+            )
+          ) {
+            if (
+              !c.applicationRoles.role1 ||
+              !c.applicationRoles.role2
+            ) {
+              return i.reply({
+                content:
+                  '❌ لم يتم إعداد رتب القبول. استخدم /setup-role للرتبتين.',
+                ephemeral:
+                  true
+              });
+            }
+
+            await target.roles.add([
+              c.applicationRoles.role1,
+              c.applicationRoles.role2
+            ]);
+
+            a.status =
+              'accepted';
+
+            a.processedBy =
+              i.user.id;
+
+            a.processedAt =
+              Date.now();
+
+            await target
+              .send(
+                `🎉 تم قبول تقديمك في **${i.guild.name}** ومنحك الرتبتين المحددتين.`
+              )
+              .catch(() => {});
+
+            await sendLog(
+              i.guild,
+              'applicationLog',
+              new EmbedBuilder()
+                .setTitle(
+                  '✅ Application Accepted'
+                )
+                .addFields(
+                  {
+                    name:
+                      'المتقدم',
+                    value:
+                      `${target}`
+                  },
+                  {
+                    name:
+                      'الأونر',
+                    value:
+                      `${i.user}`
+                  },
+                  {
+                    name:
+                      'الوقت',
+                    value:
+                      nowText()
+                  }
+                )
+            );
+          } else {
+            a.status =
+              'rejected';
+
+            a.processedBy =
+              i.user.id;
+
+            a.processedAt =
+              Date.now();
+
+            await target
+              .send(
+                `❌ تم رفض تقديمك في **${i.guild.name}**.`
+              )
+              .catch(() => {});
+
+            await sendLog(
+              i.guild,
+              'applicationLog',
+              new EmbedBuilder()
+                .setTitle(
+                  '❌ Application Rejected'
+                )
+                .addFields(
+                  {
+                    name:
+                      'المتقدم',
+                    value:
+                      `${target}`
+                  },
+                  {
+                    name:
+                      'الإداري',
+                    value:
+                      `${i.user}`
+                  }
+                )
+            );
+          }
+
+          saveData(true);
+
+          return i.update({
+            components: [
+              new ActionRowBuilder()
+                .addComponents(
+                  new ButtonBuilder()
+                    .setCustomId(
+                      'app_done'
+                    )
+                    .setLabel(
+                      a.status ===
+                        'accepted'
+                        ? '✅ تم القبول'
+                        : '❌ تم الرفض'
+                    )
+                    .setStyle(
+                      a.status ===
+                        'accepted'
+                        ? ButtonStyle.Success
+                        : ButtonStyle.Danger
+                    )
+                    .setDisabled(
+                      true
+                    )
+                )
+            ]
+          });
+        }
+
+        // PAYMENT CONFIRM
+        if (
+          i.customId.startsWith(
+            'pay_yes:'
+          ) ||
+          i.customId.startsWith(
+            'pay_no:'
+          )
+        ) {
+          const uid =
+            i.customId
+              .split(':')[1];
+
+          const s =
+            data.temp[
+              `captcha:${uid}`
+            ];
+
+          if (
+            !s ||
+            uid !==
+              i.user.id
+          ) {
+            return i.reply({
+              content:
+                '❌ جلسة التحويل انتهت.',
+              ephemeral:
+                true
+            });
+          }
+
+          if (
+            i.customId.startsWith(
+              'pay_no:'
+            )
+          ) {
+            delete data.temp[
+              `captcha:${uid}`
+            ];
+
+            saveData(true);
+
+            return i.update({
+              content:
+                '❌ تم الإلغاء.',
+              components: []
+            });
+          }
+
+          const from =
+            userData(
+              s.guildId,
+              uid
+            );
+
+          const to =
+            userData(
+              s.guildId,
+              s.to
+            );
+
+          if (
+            from.baston <
+            s.amount
+          ) {
+            delete data.temp[
+              `captcha:${uid}`
+            ];
+
+            saveData(true);
+
+            return i.update({
+              content:
+                '❌ الرصيد غير كافٍ.',
+              components: []
+            });
+          }
+
+          const fee =
+            Math.floor(
+              s.amount * 0.07
+            );
+
+          const received =
+            s.amount - fee;
+
+          from.baston -=
+            s.amount;
+
+          to.baston +=
+            received;
+
+          delete data.temp[
+            `captcha:${uid}`
+          ];
+
+          saveData(true);
+
+          return i.update({
+            content:
+              `✅ تم التحويل. الرسوم 7% = ${fee}. المستلم = ${received} Baston.`,
+            components: []
+          });
+        }
+
+        // COMPLAINT
+        if (
+          i.customId.startsWith(
+            'complaint_yes:'
+          ) ||
+          i.customId.startsWith(
+            'complaint_no:'
+          )
+        ) {
+          const key =
+            i.customId
+              .split(':')
+              .slice(1)
+              .join(':');
+
+          const c =
+            data.complaints[
+              key
+            ];
+
+          if (
+            !c ||
+            c.authorId !==
+              i.user.id
+          ) {
+            return i.reply({
+              content:
+                '❌ هذه الشكوى ليست لك.',
+              ephemeral:
+                true
+            });
+          }
+
+          if (
+            i.customId.startsWith(
+              'complaint_no:'
+            )
+          ) {
+            delete data.complaints[
+              key
+            ];
+
+            saveData(true);
+
+            return i.update({
+              content:
+                '❌ تم الإلغاء.',
+              components: []
+            });
+          }
+
+          const ch =
+            await fetchText(
+              i.guild,
+              guildCfg(
+                i.guild.id
+              ).channels
+                .complaintLog
+            );
+
+          if (ch) {
+            await ch.send({
+              embeds: [
+                new EmbedBuilder()
+                  .setTitle(
+                    '📣 شكوى إدارية'
+                  )
+                  .addFields(
+                    {
+                      name:
+                        'المشتكي',
+                      value:
+                        `<@${c.authorId}>`
+                    },
+                    {
+                      name:
+                        'ضد',
+                      value:
+                        `<@${c.targetId}>`
+                    },
+                    {
+                      name:
+                        'السبب',
+                      value:
+                        c.reason
+                    },
+                    {
+                      name:
+                        'الوقت',
+                      value:
+                        nowText()
+                    }
+                  )
+              ]
+            });
+          }
+
+          delete data.complaints[
+            key
+          ];
+
+          saveData(true);
+
+          return i.update({
+            content:
+              '✅ تم إرسال الشكوى.',
+            components: []
+          });
+        }
+      }
+
+      // ========================================================
+      // SELECT MENUS
+      // ========================================================
+
+      if (
+        i.isStringSelectMenu()
+      ) {
+
+        // WARNING REASON
+        if (
+          i.customId.startsWith(
+            'wr:'
+          )
+        ) {
+          const targetId =
+            i.customId.split(
+              ':'
+            )[1];
+
+          const v =
+            i.values[0];
+
+          if (
+            v === 'other'
+          ) {
+            const md =
+              new ModalBuilder()
+                .setCustomId(
+                  `wrother:${targetId}`
+                )
+                .setTitle(
+                  'سبب التحذير'
+                )
+                .addComponents(
+                  new ActionRowBuilder()
+                    .addComponents(
+                      new TextInputBuilder()
+                        .setCustomId(
+                          'reason'
+                        )
+                        .setLabel(
+                          'السبب'
+                        )
+                        .setStyle(
+                          TextInputStyle.Paragraph
+                        )
+                        .setRequired(
+                          true
+                        )
+                    )
+                );
+
+            return i.showModal(
+              md
+            );
+          }
+
+          return i.update({
+            content:
+              `السبب: ${warnReasons[v]}\nاختر المدة:`,
+
+            components: [
+              new ActionRowBuilder()
+                .addComponents(
+                  new StringSelectMenuBuilder()
+                    .setCustomId(
+                      `wd:${targetId}:${v}`
+                    )
+                    .setPlaceholder(
+                      'المدة'
+                    )
+                    .addOptions(
+                      ...[
+                        '1h',
+                        '6h',
+                        '12h',
+                        '1d',
+                        '3d',
+                        '1w'
+                      ].map(
+                        x =>
+                          new StringSelectMenuOptionBuilder()
+                            .setLabel(
+                              x
+                            )
+                            .setValue(
+                              x
+                            )
+                      )
+                    )
+                )
+            ]
+          });
+        }
+
+        // WARNING DURATION
+        if (
+          i.customId.startsWith(
+            'wd:'
+          )
+        ) {
+          const p =
+            i.customId.split(
+              ':'
+            );
+
+          const target =
+            await i.guild.members
+              .fetch(p[1])
+              .catch(
+                () => null
+              );
+
+          if (!target) {
+            return i.update({
+              content:
+                '❌ غير موجود',
+              components: []
+            });
+          }
+
+          try {
+            await issueWarning(
+              i.guild,
+              i.member,
+              target,
+              warnReasons[
+                p[2]
+              ] ||
+                'مخالفة القوانين',
+              parseDuration(
+                i.values[0]
+              )
+            );
+
+            return i.update({
+              content:
+                `✅ تم تحذير ${target}.`,
+              components: []
+            });
+          } catch (e) {
+            return i.update({
+              content:
+                `❌ ${e.message}`,
+              components: []
+            });
+          }
+        }
+
+        // JAIL DURATION
+        if (
+          i.customId.startsWith(
+            'jd:'
+          )
+        ) {
+          const target =
+            await i.guild.members
+              .fetch(
+                i.customId.split(
+                  ':'
+                )[1]
+              )
+              .catch(
+                () => null
+              );
+
+          if (!target) {
+            return i.update({
+              content:
+                '❌ غير موجود',
+              components: []
+            });
+          }
+
+          try {
+            await issueJail(
+              i.guild,
+              i.member,
+              target,
+              parseDuration(
+                i.values[0]
+              ),
+              'مخالفة القوانين'
+            );
+
+            return i.update({
+              content:
+                `⛓️ تم سجن ${target} لمدة ${fmt(parseDuration(i.values[0]))}.`,
+              components: []
+            });
+          } catch (e) {
+            return i.update({
+              content:
+                `❌ ${e.message}`,
+              components: []
+            });
+          }
+        }
+      }
+
+      // ========================================================
+      // MODALS
+      // ========================================================
+
+      if (
+        i.isModalSubmit()
+      ) {
+
+        // OTHER WARNING REASON
+        if (
+          i.customId.startsWith(
+            'wrother:'
+          )
+        ) {
+          const targetId =
+            i.customId.split(
+              ':'
+            )[1];
+
+          const reason =
+            i.fields.getTextInputValue(
+              'reason'
+            );
+
+          const md =
+            new ModalBuilder()
+              .setCustomId(
+                `wrother2:${targetId}`
+              )
+              .setTitle(
+                'مدة التحذير'
+              )
+              .addComponents(
+                new ActionRowBuilder()
+                  .addComponents(
+                    new TextInputBuilder()
+                      .setCustomId(
+                        'duration'
+                      )
+                      .setLabel(
+                        'المدة (مثال 1h أو 1d)'
+                      )
+                      .setStyle(
+                        TextInputStyle.Short
+                      )
+                      .setRequired(
+                        true
+                      )
+                  )
+              );
+
+          data.temp[
+            `warnreason:${i.user.id}`
+          ] = {
+            targetId,
+            reason,
+            createdAt:
+              Date.now()
+          };
+
+          saveData();
+
+          return i.showModal(
+            md
+          );
+        }
+
+        // OTHER WARNING DURATION
+        if (
+          i.customId.startsWith(
+            'wrother2:'
+          )
+        ) {
+          const targetId =
+            i.customId.split(
+              ':'
+            )[1];
+
+          const durationText =
+            i.fields.getTextInputValue(
+              'duration'
+            );
+
+          const s =
+            data.temp[
+              `warnreason:${i.user.id}`
+            ];
+
+          if (!s) {
+            return i.reply({
+              content:
+                '❌ انتهت جلسة التحذير.',
+              ephemeral:
+                true
+            });
+          }
+
+          const target =
+            await i.guild.members
+              .fetch(targetId)
+              .catch(
+                () => null
+              );
+
+          const d =
+            parseDuration(
+              durationText
+            );
+
+          if (
+            !target ||
+            !d
+          ) {
+            return i.reply({
+              content:
+                '❌ العضو أو المدة غير صحيحة.',
+              ephemeral:
+                true
+            });
+          }
+
+          try {
+            await issueWarning(
+              i.guild,
+              i.member,
+              target,
+              s.reason,
+              d
+            );
+
+            delete data.temp[
+              `warnreason:${i.user.id}`
+            ];
+
+            saveData(true);
+
+            return i.reply({
+              content:
+                `✅ تم تحذير ${target} لمدة ${fmt(d)}.`,
+              ephemeral:
+                true
+            });
+          } catch (e) {
+            return i.reply({
+              content:
+                `❌ ${e.message}`,
+              ephemeral:
+                true
+            });
+          }
+        }
+
+        // APPLICATION MODAL 1
+        if (
+          i.customId ===
+          'app_m1'
+        ) {
+          const a =
+            data.applications[
+              `${i.guild.id}:${i.user.id}`
+            ];
+
+          if (!a) {
+            return i.reply({
+              content:
+                '❌ جلسة التقديم انتهت.',
+              ephemeral:
+                true
+            });
+          }
+
+          for (
+            let n = 1;
+            n <= 5;
+            n++
+          ) {
+            a.answers[
+              `q${n}`
+            ] =
+              i.fields
+                .getTextInputValue(
+                  `q${n}`
+                );
+          }
+
+          saveData(true);
+
+          return i.showModal(
+            appModal2()
+          );
+        }
+
+        // APPLICATION MODAL 2
+        if (
+          i.customId ===
+          'app_m2'
+        ) {
+          const a =
+            data.applications[
+              `${i.guild.id}:${i.user.id}`
+            ];
+
+          if (!a) {
+            return i.reply({
+              content:
+                '❌ جلسة التقديم انتهت.',
+              ephemeral:
+                true
+            });
+          }
+
+          for (
+            let n = 6;
+            n <= 8;
+            n++
+          ) {
+            a.answers[
+              `q${n}`
+            ] =
+              i.fields
+                .getTextInputValue(
+                  `q${n}`
+                );
+          }
+
+          await sendApplication(
+            i.guild,
+            i.user.id
+          );
+
+          return i.reply({
+            content:
+              '✅ تم إرسال التقديم للإدارة.',
+            ephemeral:
+              true
+          });
+        }
+      }
+
+    } catch (e) {
+      console.error(
+        'interactionCreate',
+        e
+      );
+
+      if (
+        i.isRepliable()
+      ) {
+        const msg = {
+          content:
+            '❌ حدث خطأ غير متوقع.',
+          ephemeral:
+            true
+        };
+
+        if (
+          i.replied ||
+          i.deferred
+        ) {
+          await i.followUp(
+            msg
+          ).catch(
+            () => {}
+          );
+        } else {
+          await i.reply(
+            msg
+          ).catch(
+            () => {}
+          );
+        }
+      }
+
+      await dmOwner(
+        'Interaction Error',
+        e
+      );
     }
+  }
 );
 
-// ======================================================
+// ============================================================
+// PASTON PREFIX TRANSFER
+// ============================================================
+
+client.on(
+  'messageCreate',
+  async m => {
+    try {
+      if (
+        !m.guild ||
+        m.author.bot
+      ) {
+        return;
+      }
+
+      const w =
+        m.content
+          .trim()
+          .split(/\s+/);
+
+      if (
+        w[0] !== 'p'
+      ) {
+        return;
+      }
+
+      const target =
+        m.mentions.users.first();
+
+      const amount =
+        Number(
+          w[2]
+        );
+
+      if (
+        !target ||
+        !amount ||
+        amount <= 0
+      ) {
+        return m.reply(
+          '❌ مثال: `p @User 100`'
+        );
+      }
+
+      const u =
+        userData(
+          m.guild.id,
+          m.author.id
+        );
+
+      if (
+        u.baston <
+        amount
+      ) {
+        return m.reply(
+          '❌ رصيد Baston غير كافٍ.'
+        );
+      }
+
+      const code =
+        String(
+          Math.floor(
+            1000 +
+              Math.random() *
+                9000
+          )
+        );
+
+      data.temp[
+        `captcha:${m.author.id}`
+      ] = {
+        guildId:
+          m.guild.id,
+        to:
+          target.id,
+        amount,
+        code,
+        createdAt:
+          Date.now(),
+        stage:
+          'captcha'
+      };
+
+      saveData(true);
+
+      return m.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle(
+              '🔐 CAPTCHA'
+            )
+            .setDescription(
+              `اكتب هذا الرقم في نفس الشات: **${code}**\n` +
+              `تحويل **${amount} Baston** إلى ${target}. الرسوم 7% بعد التأكيد.`
+            )
+        ]
+      });
+
+    } catch (e) {
+      await dmOwner(
+        'Transfer Error',
+        e
+      );
+    }
+  }
+);
+
+// ============================================================
+// CLEANUP
+// ============================================================
+
+setInterval(
+  async () => {
+    try {
+      const now =
+        Date.now();
+
+      // Warnings
+      for (
+        const k of
+          Object.keys(
+            data.warnings
+          )
+      ) {
+        data.warnings[k] =
+          data.warnings[k].filter(
+            x =>
+              x.expiresAt >
+              now
+          );
+
+        if (
+          !data.warnings[k]
+            .length
+        ) {
+          delete data.warnings[k];
+        }
+      }
+
+      // Jails
+      for (
+        const k of
+          Object.keys(
+            data.jails
+          )
+      ) {
+        const j =
+          data.jails[k];
+
+        if (
+          j.expiresAt <=
+          now
+        ) {
+          const g =
+            client.guilds.cache.get(
+              j.guildId
+            );
+
+          const m =
+            await g?.members
+              .fetch(
+                j.userId
+              )
+              .catch(
+                () => null
+              );
+
+          const r =
+            g?.roles.cache.get(
+              j.roleId
+            );
+
+          if (
+            m &&
+            r
+          ) {
+            await m.roles
+              .remove(
+                r,
+                'انتهاء مدة السجن'
+              )
+              .catch(
+                () => {}
+              );
+          }
+
+          delete data.jails[
+            k
+          ];
+        }
+      }
+
+      // Temporary data
+      for (
+        const k of
+          Object.keys(
+            data.temp
+          )
+      ) {
+        if (
+          now -
+            (
+              data.temp[k]
+                .createdAt ||
+              now
+            ) >
+          600000
+        ) {
+          delete data.temp[k];
+        }
+      }
+
+      // Closed tickets
+      for (
+        const k of
+          Object.keys(
+            data.tickets
+          )
+      ) {
+        if (
+          data.tickets[k]
+            .closed &&
+          now -
+            (
+              data.tickets[k]
+                .closedAt ||
+              now
+            ) >
+            86400000
+        ) {
+          delete data.tickets[
+            k
+          ];
+        }
+      }
+
+      saveData(true);
+
+    } catch (e) {
+      console.error(
+        'cleanup',
+        e
+      );
+
+      await dmOwner(
+        'Cleanup Error',
+        e
+      );
+    }
+  },
+  30000
+);
+
+// ============================================================
+// VOICE XP
+// ============================================================
+
+setInterval(
+  () => {
+    for (
+      const g of
+        client.guilds.cache.values()
+    ) {
+      for (
+        const m of
+          g.members.cache.values()
+      ) {
+        if (
+          !m.user.bot &&
+          m.voice.channel
+        ) {
+          userData(
+            g.id,
+            m.id
+          ).voiceXp += 5;
+
+          userData(
+            g.id,
+            m.id
+          ).xp += 5;
+        }
+      }
+    }
+
+    saveData();
+  },
+  300000
+);
+
+// ============================================================
+// TICKET REMINDER
+// ============================================================
+
+setInterval(
+  async () => {
+    const now =
+      Date.now();
+
+    for (
+      const t of
+        Object.values(
+          data.tickets
+        )
+    ) {
+      if (
+        t.closed ||
+        t.reminderSent ||
+        t.firstAdminReply ||
+        now -
+          t.createdAt <
+          60000
+      ) {
+        continue;
+      }
+
+      const g =
+        client.guilds.cache.get(
+          t.guildId
+        );
+
+      const c =
+        g?.channels.cache.get(
+          t.channelId
+        );
+
+      if (c) {
+        await c.send(
+          `<@${t.userId}> برجاء شرح مشكلتك.`
+        ).catch(
+          () => {}
+        );
+
+        t.reminderSent =
+          true;
+      }
+    }
+
+    saveData();
+  },
+  5000
+);
+
+// ============================================================
+// OWNER OFFLINE MENTION
+// ============================================================
+
+client.on(
+  'messageCreate',
+  async m => {
+    try {
+      if (
+        !m.guild ||
+        m.author.bot ||
+        !m.mentions.users.has(
+          m.guild.ownerId
+        )
+      ) {
+        return;
+      }
+
+      const owner =
+        await m.guild.members
+          .fetch(
+            m.guild.ownerId
+          )
+          .catch(
+            () => null
+          );
+
+      if (
+        !owner ||
+        owner.presence?.status ===
+          'offline' ||
+        !owner.presence
+      ) {
+        await m.reply(
+          'صاحب السيرفر غير موجود حاليا برجاء كتابة رسالتك'
+        ).catch(
+          () => {}
+        );
+
+        await owner?.send({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle(
+                '👑 تم منشنك وأنت غير متاح'
+              )
+              .addFields(
+                {
+                  name:
+                    'العضو',
+                  value:
+                    `${m.author}`
+                },
+                {
+                  name:
+                    'الروم',
+                  value:
+                    `${m.channel}`
+                },
+                {
+                  name:
+                    'الرسالة',
+                  value:
+                    m.content.slice(
+                      0,
+                      1500
+                    )
+                },
+                {
+                  name:
+                    'الوقت',
+                  value:
+                    nowText()
+                }
+              )
+          ]
+        }).catch(
+          () => {}
+        );
+      }
+
+    } catch (e) {
+      await dmOwner(
+        'Owner Mention Error',
+        e
+      );
+    }
+  }
+);
+
+// ============================================================
+// READY
+// ============================================================
+
+client.once(
+  'ready',
+  async () => {
+    console.log(
+      `✅ ${client.user.tag} is online`
+    );
+
+    try {
+      const app =
+        await client.application.fetch();
+
+      botOwnerId =
+        app.owner?.id ||
+        null;
+
+    } catch {}
+
+    await registerCommands();
+
+    client.user.setActivity(
+      `${client.guilds.cache.size} سيرفر | ${PREFIX}نقاط`,
+      {
+        type:
+          ActivityType.Watching
+      }
+    );
+  }
+);
+
+// ============================================================
+// ERROR PROTECTION
+// ============================================================
+
+process.on(
+  'unhandledRejection',
+  e => {
+    console.error(e);
+    dmOwner(
+      'Unhandled Rejection',
+      e
+    );
+  }
+);
+
+process.on(
+  'uncaughtException',
+  e => {
+    console.error(e);
+    dmOwner(
+      'Uncaught Exception',
+      e
+    );
+  }
+);
+
+client.on(
+  'error',
+  e => {
+    console.error(e);
+    dmOwner(
+      'Discord Client Error',
+      e
+    );
+  }
+);
+
+// ============================================================
 // LOGIN
-// ======================================================
+// ============================================================
 
 client.login(TOKEN);
