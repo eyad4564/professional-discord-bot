@@ -6258,7 +6258,7 @@ client.on("messageCreate", async (message) => {
         }
 
 
-        // ==============================================
+              // ==============================================
         // JAIL
         // ==============================================
 
@@ -6375,7 +6375,8 @@ client.on("messageCreate", async (message) => {
             ].includes(command)
         ) {
 
-            let target = message.member;
+            let target =
+                message.member;
 
             if (args[0]) {
 
@@ -6406,7 +6407,9 @@ client.on("messageCreate", async (message) => {
                 embeds: [
                     new EmbedBuilder()
                         .setColor(0xF1C40F)
-                        .setTitle(`⭐ نقاط ${target.displayName}`)
+                        .setTitle(
+                            `⭐ نقاط ${target.displayName}`
+                        )
                         .addFields(
                             {
                                 name: "🏆 نقاط الإجراءات",
@@ -6450,7 +6453,8 @@ client.on("messageCreate", async (message) => {
                             },
                             {
                                 name: "📊 إجمالي النقاط",
-                                value: `${stats.points || user.actionPoints || 0}`,
+                                value:
+                                    `${stats.points || user.actionPoints || 0}`,
                                 inline: true
                             }
                         )
@@ -6464,12 +6468,11 @@ client.on("messageCreate", async (message) => {
         // ==============================================
 
         if (
-            [
-                "xp"
-            ].includes(command)
+            ["xp"].includes(command)
         ) {
 
-            let target = message.member;
+            let target =
+                message.member;
 
             if (args[0]) {
 
@@ -6509,7 +6512,8 @@ client.on("messageCreate", async (message) => {
             ].includes(command)
         ) {
 
-            let target = message.member;
+            let target =
+                message.member;
 
             if (args[0]) {
 
@@ -6568,14 +6572,21 @@ client.on("messageCreate", async (message) => {
             const amount =
                 Number(args[1]);
 
-            if (!target || !Number.isInteger(amount) || amount <= 0) {
+            if (
+                !target ||
+                !Number.isInteger(amount) ||
+                amount <= 0
+            ) {
                 return prefixError(
                     message,
                     "استخدم: `$pay @العضو 100`"
                 );
             }
 
-            if (target.id === message.author.id) {
+            if (
+                target.id ===
+                message.author.id
+            ) {
                 return prefixError(
                     message,
                     "لا يمكنك تحويل الأموال لنفسك."
@@ -6596,15 +6607,22 @@ client.on("messageCreate", async (message) => {
                         target.id
                     );
 
-                if ((sender.coins || 0) < amount) {
+                if (
+                    (sender.coins || 0) < amount
+                ) {
                     return prefixError(
                         message,
                         "رصيدك غير كافي."
                     );
                 }
 
-                sender.coins -= amount;
-                receiver.coins += amount;
+                sender.coins =
+                    (sender.coins || 0) -
+                    amount;
+
+                receiver.coins =
+                    (receiver.coins || 0) +
+                    amount;
 
                 saveData();
 
@@ -6635,7 +6653,8 @@ client.on("messageCreate", async (message) => {
             ].includes(command)
         ) {
 
-            let target = message.member;
+            let target =
+                message.member;
 
             if (args[0]) {
 
@@ -6693,7 +6712,8 @@ client.on("messageCreate", async (message) => {
             message.channel &&
             message.channel.isTextBased()
         ) {
-            message.reply({
+
+            await message.reply({
                 content:
                     "❌ حدث خطأ أثناء تنفيذ الأمر."
             }).catch(() => {});
@@ -6706,501 +6726,551 @@ client.on("messageCreate", async (message) => {
 // TICKET MESSAGE PERMISSIONS
 // ==================================================
 
-client.on("messageCreate", async (message) => {
-
-    try {
-
-        if (!message.guild) return;
-
-        if (message.author.bot) return;
-
-        const ticket =
-            findTicketByChannel(
-                message.guild.id,
-                message.channel.id
-            );
-
-        if (!ticket) return;
-
-        const guildData =
-            getGuildData(
-                message.guild.id
-            );
-
-        const member =
-            message.member;
-
-        if (!member) return;
-
-        // صاحب التذكرة دائمًا مسموح له
-        if (
-            ticket.userId === member.id
-        ) {
-            return;
-        }
-
-        const level =
-            getStaffLevel(
-                member,
-                guildData
-            );
-
-        // عضو عادي ليس صاحب التذكرة
-        if (level <= 0) {
-
-            await message.delete().catch(() => {});
-
-            return;
-        }
-
-        // التذكرة غير مستلمة:
-        // الموظفون مسموح لهم بالكتابة
-        if (!ticket.claimedBy) {
-            return;
-        }
-
-        // المستلم
-        if (
-            ticket.claimedBy === member.id
-        ) {
-            return;
-        }
-
-        let claimerLevel = 0;
+client.on(
+    "messageCreate",
+    async (message) => {
 
         try {
 
-            const claimer =
-                await message.guild.members.fetch(
-                    ticket.claimedBy
+            if (!message.guild) return;
+            if (message.author.bot) return;
+
+            const ticket =
+                findTicketByChannel(
+                    message.guild.id,
+                    message.channel.id
                 );
 
-            claimerLevel =
+            if (!ticket) return;
+
+            const guildData =
+                getGuildData(
+                    message.guild.id
+                );
+
+            const member =
+                message.member;
+
+            if (!member) return;
+
+            // صاحب التذكرة دائمًا مسموح
+            if (
+                ticket.userId === member.id
+            ) {
+                return;
+            }
+
+            const level =
                 getStaffLevel(
-                    claimer,
+                    member,
                     guildData
                 );
 
-        } catch {
-            claimerLevel = 0;
+            // عضو عادي
+            if (level <= 0) {
+
+                await message.delete()
+                    .catch(() => {});
+
+                return;
+            }
+
+            // غير مستلمة
+            if (!ticket.claimedBy) {
+                return;
+            }
+
+            // المستلم
+            if (
+                ticket.claimedBy === member.id
+            ) {
+                return;
+            }
+
+            let claimerLevel = 0;
+
+            try {
+
+                const claimer =
+                    await message.guild.members.fetch(
+                        ticket.claimedBy
+                    );
+
+                claimerLevel =
+                    getStaffLevel(
+                        claimer,
+                        guildData
+                    );
+
+            } catch {
+
+                claimerLevel = 0;
+            }
+
+            // الأعلى فقط يستطيع الكتابة
+            if (
+                level > claimerLevel
+            ) {
+                return;
+            }
+
+            await message.delete()
+                .catch(() => {});
+
+            const warning =
+                await message.channel.send({
+                    content:
+                        `⛔ ${member} هذه التذكرة مستلمة من <@${ticket.claimedBy}>، ولا يمكنك الكتابة فيها حاليًا.`
+                })
+                .catch(() => null);
+
+            if (warning) {
+
+                setTimeout(
+                    () => {
+                        warning.delete()
+                            .catch(() => {});
+                    },
+                    3000
+                );
+            }
+
+        } catch (error) {
+
+            console.error(
+                "Ticket Permission Error:",
+                error
+            );
         }
-
-        // الإدارة الأعلى من المستلم مسموح لها
-        if (
-            level > claimerLevel
-        ) {
-            return;
-        }
-
-        // غير مسموح
-        await message.delete().catch(() => {});
-
-        const warning =
-            await message.channel.send({
-                content:
-                    `⛔ ${member} هذه التذكرة مستلمة من <@${ticket.claimedBy}>، ولا يمكنك الكتابة فيها حاليًا.`
-            }).catch(() => null);
-
-        if (warning) {
-
-            setTimeout(() => {
-                warning.delete().catch(() => {});
-            }, 3000);
-        }
-
-    } catch (error) {
-
-        console.error(
-            "Ticket Permission Error:",
-            error
-        );
     }
-});
+);
 
 
 // ==================================================
 // ANTI SPAM
 // ==================================================
+//
+// ملاحظة مهمة:
+// لا نستخدم اسم spamTracker حتى لا يحصل تعارض
+// مع أي تعريف موجود سابقًا في ملفك.
+//
 
-const spamTracker = new Map();
+const antiSpamTracker =
+    new Map();
 
+client.on(
+    "messageCreate",
+    async (message) => {
 
-client.on("messageCreate", async (message) => {
+        try {
 
-    try {
+            if (!message.guild) return;
+            if (message.author.bot) return;
 
-        if (!message.guild) return;
-
-        if (message.author.bot) return;
-
-        const guildData =
-            getGuildData(
-                message.guild.id
-            );
-
-        if (
-            !guildData.antiSpam ||
-            !guildData.antiSpam.enabled
-        ) {
-            return;
-        }
-
-        const key =
-            `${message.guild.id}:${message.author.id}`;
-
-        let record =
-            spamTracker.get(key);
-
-        if (!record) {
-
-            record = {
-                messages: [],
-                lastContent: "",
-                warned: false
-            };
-
-            spamTracker.set(
-                key,
-                record
-            );
-        }
-
-        const now =
-            Date.now();
-
-        const windowTime =
-            guildData.antiSpam.timeWindow || 5000;
-
-        record.messages =
-            record.messages.filter(
-                item =>
-                    now - item.timestamp <= windowTime
-            );
-
-        const normalized =
-            message.content
-                .trim()
-                .toLowerCase();
-
-        record.messages.push({
-            id: message.id,
-            timestamp: now,
-            content: normalized
-        });
-
-        const maxMessages =
-            guildData.antiSpam.maxMessages || 5;
-
-        // نفس الرسالة تتكرر
-        const sameMessages =
-            record.messages.filter(
-                item =>
-                    item.content === normalized &&
-                    normalized.length > 0
-            );
-
-        if (
-            sameMessages.length >= maxMessages
-        ) {
+            const guildData =
+                getGuildData(
+                    message.guild.id
+                );
 
             if (
-                guildData.antiSpam.deleteMessages
+                !guildData.antiSpam ||
+                !guildData.antiSpam.enabled
+            ) {
+                return;
+            }
+
+            const key =
+                `${message.guild.id}:${message.author.id}`;
+
+            let record =
+                antiSpamTracker.get(key);
+
+            if (!record) {
+
+                record = {
+                    messages: [],
+                    lastContent: "",
+                    warned: false
+                };
+
+                antiSpamTracker.set(
+                    key,
+                    record
+                );
+            }
+
+            const now =
+                Date.now();
+
+            const windowTime =
+                guildData.antiSpam.timeWindow ||
+                5000;
+
+            record.messages =
+                record.messages.filter(
+                    item =>
+                        now - item.timestamp <=
+                        windowTime
+                );
+
+            const normalized =
+                message.content
+                    .trim()
+                    .toLowerCase();
+
+            if (!normalized.length) {
+                return;
+            }
+
+            record.messages.push({
+                id: message.id,
+                timestamp: now,
+                content: normalized
+            });
+
+            const maxMessages =
+                guildData.antiSpam.maxMessages ||
+                5;
+
+            const sameMessages =
+                record.messages.filter(
+                    item =>
+                        item.content ===
+                        normalized
+                );
+
+            if (
+                sameMessages.length >=
+                maxMessages
             ) {
 
-                for (
-                    const item of record.messages
+                if (
+                    guildData.antiSpam.deleteMessages
                 ) {
 
-                    const msg =
-                        await message.channel.messages
-                            .fetch(item.id)
-                            .catch(() => null);
+                    for (
+                        const item
+                        of record.messages
+                    ) {
 
-                    if (msg) {
-                        await msg.delete().catch(() => {});
+                        const msg =
+                            await message.channel.messages
+                                .fetch(item.id)
+                                .catch(() => null);
+
+                        if (msg) {
+
+                            await msg.delete()
+                                .catch(() => {});
+                        }
                     }
                 }
+
+                const warning =
+                    await message.channel.send({
+                        content:
+                            `⛔ ${message.author} كفاية سبام! تم حذف رسائل السبام.`
+                    })
+                    .catch(() => null);
+
+                if (warning) {
+
+                    setTimeout(
+                        () => {
+                            warning.delete()
+                                .catch(() => {});
+                        },
+                        3000
+                    );
+                }
+
+                await sendLog(
+                    message.guild,
+                    "🚨 Anti-Spam",
+                    `${message.author} قام بتكرار نفس الرسالة أكثر من ${maxMessages} مرات.`,
+                    0xE74C3C
+                );
+
+                record.messages = [];
             }
 
-            const warning =
-                await message.channel.send({
-                    content:
-                        `⛔ ${message.author} كفاية سبام! تم حذف رسائل السبام.`
-                }).catch(() => null);
+        } catch (error) {
 
-            if (warning) {
-
-                setTimeout(() => {
-                    warning.delete().catch(() => {});
-                }, 3000);
-            }
-
-            await sendLog(
-                message.guild,
-                "🚨 Anti-Spam",
-                `${message.author} قام بتكرار نفس الرسالة أكثر من ${maxMessages} مرات.`,
-                0xE74C3C
+            console.error(
+                "Anti Spam Error:",
+                error
             );
-
-            record.messages = [];
-
-            return;
         }
-
-    } catch (error) {
-
-        console.error(
-            "Anti Spam Error:",
-            error
-        );
     }
-});
+);
 
 
 // ==================================================
 // XP + MESSAGE COUNTER
 // ==================================================
 
-client.on("messageCreate", async (message) => {
+client.on(
+    "messageCreate",
+    async (message) => {
 
-    try {
+        try {
 
-        if (!message.guild) return;
+            if (!message.guild) return;
+            if (message.author.bot) return;
 
-        if (message.author.bot) return;
+            const user =
+                getUserData(
+                    message.guild.id,
+                    message.author.id
+                );
 
-        const user =
-            getUserData(
-                message.guild.id,
-                message.author.id
+            user.messages =
+                (user.messages || 0) + 1;
+
+            const now =
+                Date.now();
+
+            // XP كل 30 ثانية
+            if (
+                !user.lastXp ||
+                now - user.lastXp >= 30000
+            ) {
+
+                user.xp =
+                    (user.xp || 0) + 10;
+
+                user.lastXp =
+                    now;
+            }
+
+            const stats =
+                getStats(
+                    message.guild.id,
+                    message.author.id
+                );
+
+            stats.messages =
+                (stats.messages || 0) + 1;
+
+            stats.xp =
+                user.xp || 0;
+
+            saveData();
+
+        } catch (error) {
+
+            console.error(
+                "XP Error:",
+                error
             );
-
-        user.messages =
-            (user.messages || 0) + 1;
-
-        const now =
-            Date.now();
-
-        // XP مرة كل 30 ثانية
-        if (
-            !user.lastXp ||
-            now - user.lastXp >= 30000
-        ) {
-
-            user.xp =
-                (user.xp || 0) + 10;
-
-            user.lastXp =
-                now;
         }
-
-        const stats =
-            getStats(
-                message.guild.id,
-                message.author.id
-            );
-
-        stats.messages =
-            (stats.messages || 0) + 1;
-
-        stats.xp =
-            user.xp;
-
-        saveData();
-
-    } catch (error) {
-
-        console.error(
-            "XP Error:",
-            error
-        );
     }
-});
+);
 
 
 // ==================================================
 // WELCOME
 // ==================================================
 
-client.on("guildMemberAdd", async (member) => {
+client.on(
+    "guildMemberAdd",
+    async (member) => {
 
-    try {
+        try {
 
-        const guildData =
-            getGuildData(
-                member.guild.id
-            );
+            const guildData =
+                getGuildData(
+                    member.guild.id
+                );
 
-        if (
-            !guildData.welcomeEnabled ||
-            !guildData.welcomeChannelId
-        ) {
-            return;
-        }
+            if (
+                !guildData.welcomeEnabled ||
+                !guildData.welcomeChannelId
+            ) {
+                return;
+            }
 
-        const channel =
-            member.guild.channels.cache.get(
-                guildData.welcomeChannelId
-            );
+            const channel =
+                member.guild.channels.cache.get(
+                    guildData.welcomeChannelId
+                );
 
-        if (!channel) return;
+            if (!channel) return;
 
-        const embed =
-            new EmbedBuilder()
-                .setColor(0x57F287)
-                .setTitle("👋 عضو جديد!")
-                .setDescription(
-                    `أهلًا وسهلًا ${member} في **${member.guild.name}** 🎉\n\nنتمنى لك وقتًا ممتعًا معنا!`
-                )
-                .setThumbnail(
-                    member.user.displayAvatarURL({
-                        size: 256
+            const embed =
+                new EmbedBuilder()
+                    .setColor(0x57F287)
+                    .setTitle("👋 عضو جديد!")
+                    .setDescription(
+                        `أهلًا وسهلًا ${member} في **${member.guild.name}** 🎉\n\nنتمنى لك وقتًا ممتعًا معنا!`
+                    )
+                    .setThumbnail(
+                        member.user.displayAvatarURL({
+                            size: 256
+                        })
+                    )
+                    .setFooter({
+                        text:
+                            `Member #${member.guild.memberCount}`
                     })
-                )
-                .setFooter({
-                    text:
-                        `Member #${member.guild.memberCount}`
-                })
-                .setTimestamp();
+                    .setTimestamp();
 
-        await channel.send({
-            embeds: [embed]
-        });
+            await channel.send({
+                embeds: [embed]
+            });
 
-    } catch (error) {
+        } catch (error) {
 
-        console.error(
-            "Welcome Error:",
-            error
-        );
+            console.error(
+                "Welcome Error:",
+                error
+            );
+        }
     }
-});
+);
 
 
 // ==================================================
 // GOODBYE
 // ==================================================
 
-client.on("guildMemberRemove", async (member) => {
+client.on(
+    "guildMemberRemove",
+    async (member) => {
 
-    try {
+        try {
 
-        const guildData =
-            getGuildData(
-                member.guild.id
+            const guildData =
+                getGuildData(
+                    member.guild.id
+                );
+
+            if (
+                !guildData.goodbyeEnabled ||
+                !guildData.goodbyeChannelId
+            ) {
+                return;
+            }
+
+            const channel =
+                member.guild.channels.cache.get(
+                    guildData.goodbyeChannelId
+                );
+
+            if (!channel) return;
+
+            const embed =
+                new EmbedBuilder()
+                    .setColor(0xED4245)
+                    .setTitle("👋 عضو غادر السيرفر")
+                    .setDescription(
+                        `غادر **${member.user.tag}** السيرفر.`
+                    )
+                    .setThumbnail(
+                        member.user.displayAvatarURL({
+                            size: 256
+                        })
+                    )
+                    .setTimestamp();
+
+            await channel.send({
+                embeds: [embed]
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Goodbye Error:",
+                error
             );
-
-        if (
-            !guildData.goodbyeEnabled ||
-            !guildData.goodbyeChannelId
-        ) {
-            return;
         }
-
-        const channel =
-            member.guild.channels.cache.get(
-                guildData.goodbyeChannelId
-            );
-
-        if (!channel) return;
-
-        const embed =
-            new EmbedBuilder()
-                .setColor(0xED4245)
-                .setTitle("👋 عضو غادر السيرفر")
-                .setDescription(
-                    `غادر **${member.user.tag}** السيرفر.`
-                )
-                .setThumbnail(
-                    member.user.displayAvatarURL({
-                        size: 256
-                    })
-                )
-                .setTimestamp();
-
-        await channel.send({
-            embeds: [embed]
-        });
-
-    } catch (error) {
-
-        console.error(
-            "Goodbye Error:",
-            error
-        );
     }
-});
+);
 
 
 // ==================================================
 // BOT JOINS NEW SERVER
 // ==================================================
 
-client.on("guildCreate", async (guild) => {
+client.on(
+    "guildCreate",
+    async (guild) => {
 
-    try {
+        try {
 
-        getGuildData(guild.id);
+            getGuildData(
+                guild.id
+            );
 
-        saveData();
+            saveData();
 
-        console.log(
-            `Joined guild: ${guild.name} (${guild.id})`
-        );
+            console.log(
+                `Joined guild: ${guild.name} (${guild.id})`
+            );
 
-        await sendLog(
-            guild,
-            "🤖 Bot Added",
-            `تمت إضافة البوت إلى السيرفر:\n**${guild.name}**`,
-            0x5865F2
-        );
+            await sendLog(
+                guild,
+                "🤖 Bot Added",
+                `تمت إضافة البوت إلى السيرفر:\n**${guild.name}**`,
+                0x5865F2
+            );
 
-    } catch (error) {
+        } catch (error) {
 
-        console.error(
-            "Guild Create Error:",
-            error
-        );
+            console.error(
+                "Guild Create Error:",
+                error
+            );
+        }
     }
-});
+);
 
 
 // ==================================================
 // CLEAN TICKET DATA WHEN CHANNEL IS DELETED
 // ==================================================
 
-client.on("channelDelete", async (channel) => {
+client.on(
+    "channelDelete",
+    async (channel) => {
 
-    try {
+        try {
 
-        if (!channel.guild) return;
+            if (!channel.guild) return;
 
-        const tickets =
-            getGuildTickets(
-                channel.guild.id
+            const tickets =
+                getGuildTickets(
+                    channel.guild.id
+                );
+
+            const index =
+                tickets.findIndex(
+                    ticket =>
+                        ticket.channelId ===
+                        channel.id
+                );
+
+            if (index === -1) {
+                return;
+            }
+
+            tickets[index].closed =
+                true;
+
+            tickets[index].closedAt =
+                Date.now();
+
+            saveData();
+
+        } catch (error) {
+
+            console.error(
+                "Channel Delete Error:",
+                error
             );
-
-        const index =
-            tickets.findIndex(
-                ticket =>
-                    ticket.channelId === channel.id
-            );
-
-        if (index === -1) return;
-
-        tickets[index].closed = true;
-        tickets[index].closedAt = Date.now();
-
-        saveData();
-
-    } catch (error) {
-
-        console.error(
-            "Channel Delete Error:",
-            error
-        );
+        }
     }
-});
+);
 
 
 // ==================================================
@@ -7246,7 +7316,8 @@ async function cleanupExpiredData() {
                     );
 
                 if (
-                    active.length !== list.length
+                    active.length !==
+                    list.length
                 ) {
 
                     guildWarnings[userId] =
@@ -7282,7 +7353,9 @@ async function cleanupExpiredData() {
                     guildId
                 );
 
-            if (!guild) continue;
+            if (!guild) {
+                continue;
+            }
 
             const records =
                 data.jails[guildId] || [];
@@ -7295,16 +7368,20 @@ async function cleanupExpiredData() {
                     jail.expiresAt <= now
                 ) {
 
-                    await releaseFromJail(
-                        guild,
-                        jail.userId
-                    ).catch(error => {
+                    try {
+
+                        await releaseFromJail(
+                            guild,
+                            jail.userId
+                        );
+
+                    } catch (error) {
 
                         console.error(
                             "Jail Release Error:",
                             error
                         );
-                    });
+                    }
 
                     changed = true;
                 }
@@ -7339,58 +7416,67 @@ setInterval(
 // READY
 // ==================================================
 
-client.once("ready", async () => {
+client.once(
+    "ready",
+    async () => {
 
-    try {
+        try {
 
-        const application =
-            await client.application.fetch();
+            const application =
+                await client.application.fetch();
 
-        APPLICATION_OWNER_ID =
-            application.owner?.id || null;
+            APPLICATION_OWNER_ID =
+                application.owner?.id || null;
 
-        client.user.setPresence({
-            activities: [
-                {
-                    name:
-                        `${client.guilds.cache.size} Servers`,
-                    type:
-                        ActivityType.Watching
-                }
-            ],
-            status: "online"
-        });
+            client.user.setPresence({
 
-        await registerSlashCommands();
+                activities: [
 
-        console.log(
-            "=========================================="
-        );
+                    {
+                        name:
+                            `${client.guilds.cache.size} Servers`,
 
-        console.log(
-            `✅ Logged in as ${client.user.tag}`
-        );
+                        type:
+                            ActivityType.Watching
+                    }
+                ],
 
-        console.log(
-            `🏠 Servers: ${client.guilds.cache.size}`
-        );
+                status:
+                    "online"
+            });
 
-        console.log(
-            `👑 Owner ID: ${APPLICATION_OWNER_ID || "Unknown"}`
-        );
+            // تسجيل أوامر Slash
+            await registerSlashCommands();
 
-        console.log(
-            "=========================================="
-        );
+            console.log(
+                "=========================================="
+            );
 
-    } catch (error) {
+            console.log(
+                `✅ Logged in as ${client.user.tag}`
+            );
 
-        console.error(
-            "Ready Error:",
-            error
-        );
+            console.log(
+                `🏠 Servers: ${client.guilds.cache.size}`
+            );
+
+            console.log(
+                `👑 Owner ID: ${APPLICATION_OWNER_ID || "Unknown"}`
+            );
+
+            console.log(
+                "=========================================="
+            );
+
+        } catch (error) {
+
+            console.error(
+                "Ready Error:",
+                error
+            );
+        }
     }
-});
+);
 
 
 // ==================================================
@@ -7426,5 +7512,5 @@ client.login(TOKEN)
 
 
 // ==================================================
-// END PART 4
+// END OF FILE
 // ==================================================
