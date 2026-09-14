@@ -1657,9 +1657,12 @@ function isTextChannel(
 // ==================================================
 
 const slashCommands = [
+
     new SlashCommandBuilder()
-    .setName("panel")
-    .setDescription("إنشاء بانل تذاكر"),
+        .setName("panel")
+        .setDescription("إنشاء بانل تذاكر")
+
+];
 
     // ----------------------------------------------
     // HELP
