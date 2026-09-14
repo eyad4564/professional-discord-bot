@@ -2047,8 +2047,10 @@ async function registerSlashCommands() {
             );
 
         await rest.put(
-            Routes.applicationCommands(
-                client.user.id
+           Routes.applicationGuildCommands(
+    client.user.id,
+    "1547160002362351726"
+)
             ),
             {
                 body:
