@@ -1616,6 +1616,34 @@ function isTextChannel(
 // ==================================================
 
 const slashCommands = [
+    new SlashCommandBuilder()
+    .setName("setup-ticket-panel")
+    .setDescription("إنشاء بانل تذاكر")
+    .addStringOption(option =>
+        option
+            .setName("name")
+            .setDescription("اسم البانل")
+            .setRequired(true)
+    )
+    .addStringOption(option =>
+        option
+            .setName("description")
+            .setDescription("وصف البانل")
+            .setRequired(false)
+    )
+    .addStringOption(option =>
+        option
+            .setName("button")
+            .setDescription("اسم زر فتح التذكرة")
+            .setRequired(false)
+    )
+    .addChannelOption(option =>
+        option
+            .setName("category")
+            .setDescription("كاتيجوري التذاكر")
+            .addChannelTypes(ChannelType.GuildCategory)
+            .setRequired(true)
+    ),
 
     // ----------------------------------------------
     // HELP
@@ -3597,22 +3625,32 @@ client.on(
             ) {
 
                 const level =
-                    getStaffLevel(
-                        interaction.member,
-                        guildData
-                    );
+    getStaffLevel(
+        interaction.member,
+        guildData
+    );
 
-                if (
-                    level < 3
-                ) {
+const isServerOwner =
+    interaction.guild.ownerId ===
+    interaction.user.id;
 
-                    return interaction.reply({
-                        content:
-                            "❌ إنشاء بانلات التذاكر متاح للإدارة العليا والأونر فقط.",
-                        ephemeral: true
-                    });
-                }
+const isBotOwner =
+    APPLICATION_OWNER_ID &&
+    interaction.user.id ===
+    APPLICATION_OWNER_ID;
 
+if (
+    level < 3 &&
+    !isServerOwner &&
+    !isBotOwner
+) {
+
+    return interaction.reply({
+        content:
+            "❌ إنشاء بانلات التذاكر متاح فقط للإدارة العليا والأونر أو مالك السيرفر.",
+        ephemeral: true
+    });
+}
                 const name =
                     interaction.options.getString(
                         "name"
@@ -7639,14 +7677,15 @@ client.on(
             // ==============================================
             // TIME / JAIL STATUS
             // ==============================================
-
             if (
-                [
-                    "time",
-                    "الوقت",
-                    "مدة"
-                ].includes(command)
-            ) {
+    [
+        "time",
+        "الوقت",
+        "مدة",
+        "وقتي"
+    ].includes(command)
+)
+            {
 
                 let target =
                     message.member;
