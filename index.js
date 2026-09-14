@@ -1,3 +1,8 @@
+// ==================================================
+// PROFESSIONAL DISCORD BOT
+// PART 1 - CORE / CONFIG / DATABASE / HELPERS
+// ==================================================
+
 require("dotenv").config();
 
 const {
@@ -18,34 +23,34 @@ const {
     TextInputStyle,
     REST,
     Routes,
-    SlashCommandBuilder
+    SlashCommandBuilder,
+    AttachmentBuilder
 } = require("discord.js");
 
 const fs = require("fs");
 const path = require("path");
 
-/* =========================================================
-   CONFIG
-========================================================= */
 
-const TOKEN = process.env.DISCORD_TOKEN;
+// ==================================================
+// ENVIRONMENT
+// ==================================================
 
-if (!TOKEN) {
-    console.error(
-        "❌ DISCORD_TOKEN غير موجود في Railway Environment Variables."
-    );
-    process.exit(1);
-}
+const TOKEN =
+    process.env.DISCORD_TOKEN;
 
-const PREFIX = "$";
+const PREFIX =
+    process.env.PREFIX || "$";
 
-let APPLICATION_OWNER_ID = null;
+let APPLICATION_OWNER_ID =
+    null;
 
-/* =========================================================
-   DEFAULT STAFF ROLES
-========================================================= */
+
+// ==================================================
+// STAFF ROLES
+// ==================================================
 
 const STAFF_ROLES = {
+
     junior: [
         "1547161676502274171",
         "1547161677642866718",
@@ -71,53 +76,53 @@ const STAFF_ROLES = {
     ]
 };
 
-/*
-    0 = Member
-    1 = Junior
-    2 = Middle
-    3 = Senior
-    4 = Owner
-*/
 
-/* =========================================================
-   CLIENT
-========================================================= */
+// ==================================================
+// POINTS SYSTEM
+// ==================================================
 
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences
-    ],
+const POINTS = {
 
-    partials: [
-        Partials.Channel,
-        Partials.Message,
-        Partials.User,
-        Partials.GuildMember
-    ]
-});
+    warning: 3,
 
-/* =========================================================
-   DATABASE
-========================================================= */
+    timeout: 3,
 
-const DATA_FILE = path.join(
-    __dirname,
-    "data.json"
-);
+    jail: 5,
+
+    ticketClaim: 3,
+
+    goodRating: 3
+};
+
+
+// ==================================================
+// DEFAULT DATABASE
+// ==================================================
+
+const DB_PATH =
+    path.join(
+        __dirname,
+        "data.json"
+    );
 
 const DEFAULT_DATA = {
+
     guilds: {},
+
     users: {},
+
     warnings: {},
+
     jails: {},
+
     tickets: {},
+
     ticketPanels: {},
+
     ratings: {},
+
     pendingRatings: {},
+
     stats: {},
 
     pay: {
@@ -126,56 +131,54 @@ const DEFAULT_DATA = {
     }
 };
 
-let data = {
-    ...DEFAULT_DATA
-};
 
-/* =========================================================
-   LOAD DATA
-========================================================= */
+// ==================================================
+// LOAD DATABASE
+// ==================================================
 
 function loadData() {
 
     try {
 
-        if (!fs.existsSync(DATA_FILE)) {
+        if (
+            !fs.existsSync(DB_PATH)
+        ) {
 
-            data = {
-                ...DEFAULT_DATA,
-                guilds: {},
-                users: {},
-                warnings: {},
-                jails: {},
-                tickets: {},
-                ticketPanels: {},
-                ratings: {},
-                pendingRatings: {},
-                stats: {},
-                pay: {
-                    balances: {},
-                    enabled: {}
-                }
-            };
+            fs.writeFileSync(
+                DB_PATH,
+                JSON.stringify(
+                    DEFAULT_DATA,
+                    null,
+                    4
+                )
+            );
 
-            saveData();
-
-            return;
+            return JSON.parse(
+                JSON.stringify(
+                    DEFAULT_DATA
+                )
+            );
         }
 
         const raw =
             fs.readFileSync(
-                DATA_FILE,
+                DB_PATH,
                 "utf8"
             );
+
+        if (!raw.trim()) {
+
+            return JSON.parse(
+                JSON.stringify(
+                    DEFAULT_DATA
+                )
+            );
+        }
 
         const parsed =
             JSON.parse(raw);
 
-        data = {
-
-            ...DEFAULT_DATA,
-
-            ...parsed,
+        return {
 
             guilds:
                 parsed.guilds || {},
@@ -205,6 +208,7 @@ function loadData() {
                 parsed.stats || {},
 
             pay: {
+
                 balances:
                     parsed.pay?.balances || {},
 
@@ -216,221 +220,337 @@ function loadData() {
     } catch (error) {
 
         console.error(
-            "❌ خطأ أثناء قراءة data.json:",
+            "Database Load Error:",
             error
         );
 
-        data = {
-            ...DEFAULT_DATA,
-            guilds: {},
-            users: {},
-            warnings: {},
-            jails: {},
-            tickets: {},
-            ticketPanels: {},
-            ratings: {},
-            pendingRatings: {},
-            stats: {},
-            pay: {
-                balances: {},
-                enabled: {}
-            }
-        };
-
-        saveData();
+        return JSON.parse(
+            JSON.stringify(
+                DEFAULT_DATA
+            )
+        );
     }
 }
 
-/* =========================================================
-   SAVE DATA
-========================================================= */
+
+// ==================================================
+// GLOBAL DATA
+// ==================================================
+
+const data =
+    loadData();
+
+
+// ==================================================
+// SAVE DATABASE
+// ==================================================
 
 function saveData() {
 
     try {
 
         fs.writeFileSync(
-            DATA_FILE,
+            DB_PATH,
             JSON.stringify(
                 data,
                 null,
-                2
-            ),
-            "utf8"
+                4
+            )
         );
 
     } catch (error) {
 
         console.error(
-            "❌ فشل حفظ البيانات:",
+            "Database Save Error:",
             error
         );
     }
 }
 
-loadData();
 
-/* =========================================================
-   GUILD DEFAULT DATA
-========================================================= */
+// ==================================================
+// CLIENT
+// ==================================================
 
-function createDefaultGuildData() {
+const client =
+    new Client({
 
-    return {
+        intents: [
 
-        setupCompleted: false,
+            GatewayIntentBits.Guilds,
 
-        ticketCategoryId: null,
+            GatewayIntentBits.GuildMembers,
 
-        jailRoleId: null,
+            GatewayIntentBits.GuildMessages,
 
-        logsChannelId: null,
+            GatewayIntentBits.MessageContent,
 
-        welcomeChannelId: null,
+            GatewayIntentBits.GuildPresences
+        ],
 
-        goodbyeChannelId: null,
+        partials: [
 
-        welcomeEnabled: false,
+            Partials.Channel,
 
-        goodbyeEnabled: false,
+            Partials.Message,
 
-        currencyEnabled: true,
+            Partials.User,
 
-        currencyName: "Coins",
+            Partials.GuildMember
+        ]
+    });
 
-        currencySymbol: "💰",
 
-        staffRoles: {
+// ==================================================
+// GET GUILD DATA
+// ==================================================
 
-            junior: [
-                ...STAFF_ROLES.junior
-            ],
+function getGuildData(
+    guildId
+) {
 
-            middle: [
-                ...STAFF_ROLES.middle
-            ],
+    if (
+        !data.guilds[guildId]
+    ) {
 
-            senior: [
-                ...STAFF_ROLES.senior
-            ],
-
-            owner: [
-                ...STAFF_ROLES.owner
-            ]
-        },
-
-        ticketPanels: {},
-
-        antiSpam: {
-
-            enabled: true,
-
-            maxMessages: 5,
-
-            timeWindow: 5000,
-
-            deleteMessages: true
-        }
-    };
-}
-
-/* =========================================================
-   GET GUILD DATA
-========================================================= */
-
-function getGuildData(guildId) {
-
-    if (!data.guilds[guildId]) {
-
-        data.guilds[guildId] =
-            createDefaultGuildData();
-
-        saveData();
+        data.guilds[guildId] = {};
     }
 
-    const defaults =
-        createDefaultGuildData();
-
-    const current =
+    const guildData =
         data.guilds[guildId];
 
-    data.guilds[guildId] = {
 
-        ...defaults,
+    // ----------------------------------------------
+    // BASIC
+    // ----------------------------------------------
 
-        ...current,
+    if (
+        guildData.setupCompleted === undefined
+    ) {
+        guildData.setupCompleted = false;
+    }
 
-        staffRoles: {
 
-            ...defaults.staffRoles,
+    // ----------------------------------------------
+    // TICKETS
+    // ----------------------------------------------
 
-            ...(current.staffRoles || {}),
+    if (
+        guildData.ticketCategoryId === undefined
+    ) {
+        guildData.ticketCategoryId = null;
+    }
 
-            junior:
-                Array.isArray(
-                    current.staffRoles?.junior
-                )
-                    ? current.staffRoles.junior
-                    : [
-                        ...defaults.staffRoles.junior
-                    ],
 
-            middle:
-                Array.isArray(
-                    current.staffRoles?.middle
-                )
-                    ? current.staffRoles.middle
-                    : [
-                        ...defaults.staffRoles.middle
-                    ],
+    // ----------------------------------------------
+    // JAIL
+    // ----------------------------------------------
 
-            senior:
-                Array.isArray(
-                    current.staffRoles?.senior
-                )
-                    ? current.staffRoles.senior
-                    : [
-                        ...defaults.staffRoles.senior
-                    ],
+    if (
+        guildData.jailRoleId === undefined
+    ) {
+        guildData.jailRoleId = null;
+    }
 
-            owner:
-                Array.isArray(
-                    current.staffRoles?.owner
-                )
-                    ? current.staffRoles.owner
-                    : [
-                        ...defaults.staffRoles.owner
-                    ]
-        },
 
-        ticketPanels:
-            current.ticketPanels || {},
+    // ----------------------------------------------
+    // LOGS
+    // ----------------------------------------------
 
-        antiSpam: {
+    if (
+        guildData.logsChannelId === undefined
+    ) {
+        guildData.logsChannelId = null;
+    }
 
-            ...defaults.antiSpam,
 
-            ...(current.antiSpam || {})
-        }
-    };
+    // ----------------------------------------------
+    // WELCOME
+    // ----------------------------------------------
 
-    return data.guilds[guildId];
+    if (
+        guildData.welcomeChannelId === undefined
+    ) {
+        guildData.welcomeChannelId = null;
+    }
+
+    if (
+        guildData.welcomeEnabled === undefined
+    ) {
+        guildData.welcomeEnabled = false;
+    }
+
+
+    // ----------------------------------------------
+    // GOODBYE
+    // ----------------------------------------------
+
+    if (
+        guildData.goodbyeChannelId === undefined
+    ) {
+        guildData.goodbyeChannelId = null;
+    }
+
+    if (
+        guildData.goodbyeEnabled === undefined
+    ) {
+        guildData.goodbyeEnabled = false;
+    }
+
+
+    // ----------------------------------------------
+    // CURRENCY
+    // ----------------------------------------------
+
+    if (
+        guildData.currencyEnabled === undefined
+    ) {
+        guildData.currencyEnabled = true;
+    }
+
+    if (
+        guildData.currencyName === undefined
+    ) {
+        guildData.currencyName = "Coins";
+    }
+
+    if (
+        guildData.currencySymbol === undefined
+    ) {
+        guildData.currencySymbol = "💰";
+    }
+
+
+    // ----------------------------------------------
+    // STAFF ROLES
+    // ----------------------------------------------
+
+    if (
+        !guildData.staffRoles
+    ) {
+
+        guildData.staffRoles = {};
+    }
+
+    if (
+        !Array.isArray(
+            guildData.staffRoles.junior
+        )
+    ) {
+
+        guildData.staffRoles.junior =
+            [...STAFF_ROLES.junior];
+    }
+
+    if (
+        !Array.isArray(
+            guildData.staffRoles.middle
+        )
+    ) {
+
+        guildData.staffRoles.middle =
+            [...STAFF_ROLES.middle];
+    }
+
+    if (
+        !Array.isArray(
+            guildData.staffRoles.senior
+        )
+    ) {
+
+        guildData.staffRoles.senior =
+            [...STAFF_ROLES.senior];
+    }
+
+    if (
+        !Array.isArray(
+            guildData.staffRoles.owner
+        )
+    ) {
+
+        guildData.staffRoles.owner =
+            [...STAFF_ROLES.owner];
+    }
+
+
+    // ----------------------------------------------
+    // TICKET PANELS
+    // ----------------------------------------------
+
+    if (
+        !guildData.ticketPanels
+    ) {
+
+        guildData.ticketPanels = {};
+    }
+
+
+    // ----------------------------------------------
+    // ANTI SPAM
+    // ----------------------------------------------
+
+    if (
+        !guildData.antiSpam
+    ) {
+
+        guildData.antiSpam = {};
+    }
+
+    if (
+        guildData.antiSpam.enabled === undefined
+    ) {
+
+        guildData.antiSpam.enabled =
+            true;
+    }
+
+    if (
+        guildData.antiSpam.maxMessages === undefined
+    ) {
+
+        guildData.antiSpam.maxMessages =
+            5;
+    }
+
+    if (
+        guildData.antiSpam.timeWindow === undefined
+    ) {
+
+        guildData.antiSpam.timeWindow =
+            5000;
+    }
+
+    if (
+        guildData.antiSpam.deleteMessages === undefined
+    ) {
+
+        guildData.antiSpam.deleteMessages =
+            true;
+    }
+
+    return guildData;
 }
 
-/* =========================================================
-   USER DATA
-========================================================= */
+
+// ==================================================
+// GET USER DATA
+// ==================================================
 
 function getUserData(
     guildId,
     userId
 ) {
 
-    if (!data.users[guildId]) {
+    if (
+        !data.users[guildId]
+    ) {
+
         data.users[guildId] = {};
     }
 
-    if (!data.users[guildId][userId]) {
+    if (
+        !data.users[guildId][userId]
+    ) {
 
         data.users[guildId][userId] = {
 
@@ -454,46 +574,93 @@ function getUserData(
 
             coins: 0,
 
+            goodRatings: 0,
+
             lastXp: 0,
 
             lastDaily: 0
         };
-
     }
 
     const user =
         data.users[guildId][userId];
 
-    user.xp ||= 0;
-    user.actionPoints ||= 0;
-    user.warnings ||= 0;
-    user.timeouts ||= 0;
-    user.jails ||= 0;
-    user.ticketsClaimed ||= 0;
-    user.ticketsClosed ||= 0;
-    user.bans ||= 0;
-    user.messages ||= 0;
-    user.coins ||= 0;
-    user.lastXp ||= 0;
-    user.lastDaily ||= 0;
+
+    if (
+        user.xp === undefined
+    ) user.xp = 0;
+
+    if (
+        user.actionPoints === undefined
+    ) user.actionPoints = 0;
+
+    if (
+        user.warnings === undefined
+    ) user.warnings = 0;
+
+    if (
+        user.timeouts === undefined
+    ) user.timeouts = 0;
+
+    if (
+        user.jails === undefined
+    ) user.jails = 0;
+
+    if (
+        user.ticketsClaimed === undefined
+    ) user.ticketsClaimed = 0;
+
+    if (
+        user.ticketsClosed === undefined
+    ) user.ticketsClosed = 0;
+
+    if (
+        user.bans === undefined
+    ) user.bans = 0;
+
+    if (
+        user.messages === undefined
+    ) user.messages = 0;
+
+    if (
+        user.coins === undefined
+    ) user.coins = 0;
+
+    if (
+        user.goodRatings === undefined
+    ) user.goodRatings = 0;
+
+    if (
+        user.lastXp === undefined
+    ) user.lastXp = 0;
+
+    if (
+        user.lastDaily === undefined
+    ) user.lastDaily = 0;
 
     return user;
 }
 
-/* =========================================================
-   STAFF STATS
-========================================================= */
+
+// ==================================================
+// GET STATS
+// ==================================================
 
 function getStats(
     guildId,
     userId
 ) {
 
-    if (!data.stats[guildId]) {
+    if (
+        !data.stats[guildId]
+    ) {
+
         data.stats[guildId] = {};
     }
 
-    if (!data.stats[guildId][userId]) {
+    if (
+        !data.stats[guildId][userId]
+    ) {
 
         data.stats[guildId][userId] = {
 
@@ -524,191 +691,216 @@ function getStats(
     const stats =
         data.stats[guildId][userId];
 
-    stats.warnings ||= 0;
-    stats.timeouts ||= 0;
-    stats.jails ||= 0;
-    stats.bans ||= 0;
-    stats.ticketsClaimed ||= 0;
-    stats.ticketsClosed ||= 0;
-    stats.points ||= 0;
-    stats.xp ||= 0;
-    stats.messages ||= 0;
-    stats.ratings ||= 0;
-    stats.goodRatings ||= 0;
+
+    if (
+        stats.warnings === undefined
+    ) stats.warnings = 0;
+
+    if (
+        stats.timeouts === undefined
+    ) stats.timeouts = 0;
+
+    if (
+        stats.jails === undefined
+    ) stats.jails = 0;
+
+    if (
+        stats.bans === undefined
+    ) stats.bans = 0;
+
+    if (
+        stats.ticketsClaimed === undefined
+    ) stats.ticketsClaimed = 0;
+
+    if (
+        stats.ticketsClosed === undefined
+    ) stats.ticketsClosed = 0;
+
+    if (
+        stats.points === undefined
+    ) stats.points = 0;
+
+    if (
+        stats.xp === undefined
+    ) stats.xp = 0;
+
+    if (
+        stats.messages === undefined
+    ) stats.messages = 0;
+
+    if (
+        stats.ratings === undefined
+    ) stats.ratings = 0;
+
+    if (
+        stats.goodRatings === undefined
+    ) stats.goodRatings = 0;
 
     return stats;
 }
 
-/* =========================================================
-   STAFF LEVEL
-========================================================= */
 
-function getStaffLevel(member) {
+// ==================================================
+// STAFF LEVEL
+// ==================================================
 
-    if (
-        !member ||
-        !member.roles ||
-        !member.guild
-    ) {
+function getStaffLevel(
+    member,
+    guildData
+) {
+
+    if (!member) {
         return 0;
     }
 
+    if (!guildData) {
+        return 0;
+    }
+
+    const roles =
+        guildData.staffRoles || {};
+
+
+    // OWNER
     if (
-        APPLICATION_OWNER_ID &&
-        member.id === APPLICATION_OWNER_ID
+        Array.isArray(roles.owner) &&
+        roles.owner.some(
+            roleId =>
+                member.roles.cache.has(
+                    roleId
+                )
+        )
     ) {
+
         return 4;
     }
 
-    const guildData =
-        getGuildData(
-            member.guild.id
-        );
 
-    const staffRoles =
-        guildData.staffRoles ||
-        STAFF_ROLES;
-
-    const roleIds =
-        member.roles.cache.map(
-            role => role.id
-        );
-
+    // SENIOR
     if (
-        staffRoles.owner?.some(
-            id => roleIds.includes(id)
+        Array.isArray(roles.senior) &&
+        roles.senior.some(
+            roleId =>
+                member.roles.cache.has(
+                    roleId
+                )
         )
     ) {
-        return 4;
-    }
 
-    if (
-        staffRoles.senior?.some(
-            id => roleIds.includes(id)
-        )
-    ) {
         return 3;
     }
 
+
+    // MIDDLE
     if (
-        staffRoles.middle?.some(
-            id => roleIds.includes(id)
+        Array.isArray(roles.middle) &&
+        roles.middle.some(
+            roleId =>
+                member.roles.cache.has(
+                    roleId
+                )
         )
     ) {
+
         return 2;
     }
 
+
+    // JUNIOR
     if (
-        staffRoles.junior?.some(
-            id => roleIds.includes(id)
+        Array.isArray(roles.junior) &&
+        roles.junior.some(
+            roleId =>
+                member.roles.cache.has(
+                    roleId
+                )
         )
     ) {
+
         return 1;
     }
 
     return 0;
 }
 
-/* =========================================================
-   STAFF CHECKS
-========================================================= */
 
-function isStaff(member) {
-    return getStaffLevel(member) >= 1;
-}
+// ==================================================
+// STAFF CHECK
+// ==================================================
 
-function isMiddleStaff(member) {
-    return getStaffLevel(member) >= 2;
-}
-
-function isSeniorStaff(member) {
-    return getStaffLevel(member) >= 3;
-}
-
-function isOwnerStaff(member) {
-    return getStaffLevel(member) >= 4;
-}
-
-function canManage(
+function isStaff(
     member,
-    level = 1
+    guildData
 ) {
-    return getStaffLevel(member) >= level;
+
+    return (
+        getStaffLevel(
+            member,
+            guildData
+        ) > 0
+    );
 }
 
-/* =========================================================
-   MODERATION HIERARCHY
-========================================================= */
+
+// ==================================================
+// MODERATION TARGET CHECK
+// ==================================================
 
 function canModerateTarget(
-    actor,
-    target
+    moderator,
+    target,
+    guildData
 ) {
 
-    if (
-        !actor ||
-        !target
-    ) {
+    if (!moderator || !target) {
         return false;
     }
 
     if (
-        actor.id === target.id
+        moderator.id === target.id
     ) {
         return false;
     }
 
+    // البوت مالكه يقدر يدير الكل
     if (
         APPLICATION_OWNER_ID &&
-        actor.id === APPLICATION_OWNER_ID
+        moderator.id ===
+        APPLICATION_OWNER_ID
     ) {
         return true;
     }
 
-    const actorLevel =
-        getStaffLevel(actor);
+    const moderatorLevel =
+        getStaffLevel(
+            moderator,
+            guildData
+        );
 
     const targetLevel =
-        getStaffLevel(target);
+        getStaffLevel(
+            target,
+            guildData
+        );
 
     if (
-        actorLevel >= 4
-    ) {
-        return true;
-    }
-
-    if (
-        actorLevel <= 0
+        moderatorLevel <= 0
     ) {
         return false;
     }
 
-    return targetLevel < actorLevel;
+    // لا يسمح بإدارة نفس المستوى
+    // أو مستوى أعلى
+    return (
+        moderatorLevel >
+        targetLevel
+    );
 }
 
-/* =========================================================
-   POINTS
-========================================================= */
 
-const POINTS = {
-
-    warning: 3,
-
-    timeout: 3,
-
-    jail: 5,
-
-    ticketClaim: 3,
-
-    ticketClose: 1,
-
-    goodRating: 3
-
-};
-
-/* =========================================================
-   ADD POINTS
-========================================================= */
+// ==================================================
+// ADD POINTS
+// ==================================================
 
 function addPoints(
     guildId,
@@ -716,15 +908,6 @@ function addPoints(
     amount
 ) {
 
-    amount =
-        Number(amount);
-
-    if (
-        !Number.isFinite(amount)
-    ) {
-        return;
-    }
-
     const user =
         getUserData(
             guildId,
@@ -737,25 +920,24 @@ function addPoints(
             userId
         );
 
-    user.actionPoints += amount;
+    user.actionPoints =
+        (user.actionPoints || 0) +
+        amount;
 
-    stats.points += amount;
-
-    saveData();
+    stats.points =
+        (stats.points || 0) +
+        amount;
 }
 
-/* =========================================================
-   XP
-========================================================= */
 
-const XP_PER_MESSAGE = 10;
-
-const XP_COOLDOWN =
-    30 * 1000;
+// ==================================================
+// ADD XP
+// ==================================================
 
 function addXP(
     guildId,
-    userId
+    userId,
+    amount
 ) {
 
     const user =
@@ -764,56 +946,41 @@ function addXP(
             userId
         );
 
-    const now =
-        Date.now();
-
-    if (
-        now - user.lastXp <
-        XP_COOLDOWN
-    ) {
-        return;
-    }
-
-    user.xp +=
-        XP_PER_MESSAGE;
-
-    user.messages += 1;
-
-    user.lastXp =
-        now;
-
     const stats =
         getStats(
             guildId,
             userId
         );
 
-    stats.xp +=
-        XP_PER_MESSAGE;
+    user.xp =
+        (user.xp || 0) +
+        amount;
 
-    stats.messages += 1;
-
-    saveData();
+    stats.xp =
+        user.xp;
 }
 
-/* =========================================================
-   COINS
-========================================================= */
+
+// ==================================================
+// COINS
+// ==================================================
 
 function getBalance(
     guildId,
     userId
 ) {
 
-    return Math.floor(
-        Number(
-            getUserData(
-                guildId,
-                userId
-            ).coins || 0
-        )
+    const user =
+        getUserData(
+            guildId,
+            userId
+        );
+
+    return (
+        user.coins || 0
     );
 }
+
 
 function addCoins(
     guildId,
@@ -821,40 +988,19 @@ function addCoins(
     amount
 ) {
 
-    amount =
-        Math.floor(
-            Number(amount)
-        );
-
-    if (
-        !Number.isFinite(amount) ||
-        amount <= 0
-    ) {
-        return false;
-    }
-
     const user =
         getUserData(
             guildId,
             userId
         );
 
-    user.coins +=
+    user.coins =
+        (user.coins || 0) +
         amount;
 
-    if (
-        !data.pay.balances[guildId]
-    ) {
-        data.pay.balances[guildId] = {};
-    }
-
-    data.pay.balances[guildId][userId] =
-        user.coins;
-
     saveData();
-
-    return true;
 }
+
 
 function removeCoins(
     guildId,
@@ -862,18 +1008,6 @@ function removeCoins(
     amount
 ) {
 
-    amount =
-        Math.floor(
-            Number(amount)
-        );
-
-    if (
-        !Number.isFinite(amount) ||
-        amount <= 0
-    ) {
-        return false;
-    }
-
     const user =
         getUserData(
             guildId,
@@ -881,33 +1015,30 @@ function removeCoins(
         );
 
     if (
-        user.coins < amount
+        (user.coins || 0) <
+        amount
     ) {
+
         return false;
     }
 
-    user.coins -=
+    user.coins =
+        (user.coins || 0) -
         amount;
-
-    if (
-        !data.pay.balances[guildId]
-    ) {
-        data.pay.balances[guildId] = {};
-    }
-
-    data.pay.balances[guildId][userId] =
-        user.coins;
 
     saveData();
 
     return true;
 }
 
-/* =========================================================
-   DURATION
-========================================================= */
 
-function parseDuration(input) {
+// ==================================================
+// DURATION PARSER
+// ==================================================
+
+function parseDuration(
+    input
+) {
 
     if (!input) {
         return null;
@@ -920,163 +1051,184 @@ function parseDuration(input) {
 
     const match =
         value.match(
-            /^(\d+)\s*(s|m|h|d|w)$/
+            /^(\d+)\s*(s|sec|secs|m|min|mins|h|hr|hrs|d|day|days|w|week|weeks)$/i
         );
 
     if (!match) {
         return null;
     }
 
-    const amount =
+    const number =
         Number(match[1]);
 
     const unit =
-        match[2];
-
-    const units = {
-
-        s: 1000,
-
-        m:
-            60 * 1000,
-
-        h:
-            60 * 60 * 1000,
-
-        d:
-            24 * 60 * 60 * 1000,
-
-        w:
-            7 *
-            24 *
-            60 *
-            60 *
-            1000
-    };
-
-    return (
-        amount *
-        units[unit]
-    );
-}
-
-function formatDuration(ms) {
+        match[2].toLowerCase();
 
     if (
-        !ms ||
-        ms <= 0
+        !Number.isFinite(number) ||
+        number <= 0
     ) {
-        return "غير محددة";
+        return null;
     }
 
-    let seconds =
-        Math.floor(
-            ms / 1000
-        );
+    let milliseconds =
+        0;
 
-    const weeks =
-        Math.floor(
-            seconds / 604800
-        );
+    if (
+        [
+            "s",
+            "sec",
+            "secs"
+        ].includes(unit)
+    ) {
 
-    seconds %= 604800;
+        milliseconds =
+            number * 1000;
+    }
+
+    else if (
+        [
+            "m",
+            "min",
+            "mins"
+        ].includes(unit)
+    ) {
+
+        milliseconds =
+            number * 60 * 1000;
+    }
+
+    else if (
+        [
+            "h",
+            "hr",
+            "hrs"
+        ].includes(unit)
+    ) {
+
+        milliseconds =
+            number * 60 * 60 * 1000;
+    }
+
+    else if (
+        [
+            "d",
+            "day",
+            "days"
+        ].includes(unit)
+    ) {
+
+        milliseconds =
+            number * 24 * 60 * 60 * 1000;
+    }
+
+    else if (
+        [
+            "w",
+            "week",
+            "weeks"
+        ].includes(unit)
+    ) {
+
+        milliseconds =
+            number * 7 * 24 * 60 * 60 * 1000;
+    }
+
+    else {
+        return null;
+    }
+
+    return {
+        input: value,
+        milliseconds
+    };
+}
+
+
+// ==================================================
+// FORMAT DURATION
+// ==================================================
+
+function formatDuration(
+    milliseconds
+) {
+
+    let remaining =
+        Math.max(
+            0,
+            milliseconds
+        );
 
     const days =
         Math.floor(
-            seconds / 86400
+            remaining /
+            (24 * 60 * 60 * 1000)
         );
 
-    seconds %= 86400;
+    remaining %=
+        24 * 60 * 60 * 1000;
 
     const hours =
         Math.floor(
-            seconds / 3600
+            remaining /
+            (60 * 60 * 1000)
         );
 
-    seconds %= 3600;
+    remaining %=
+        60 * 60 * 1000;
 
     const minutes =
         Math.floor(
-            seconds / 60
+            remaining /
+            (60 * 1000)
         );
 
-    seconds %= 60;
+    remaining %=
+        60 * 1000;
+
+    const seconds =
+        Math.floor(
+            remaining /
+            1000
+        );
 
     const parts = [];
 
-    if (weeks) {
+    if (days > 0) {
         parts.push(
-            `${weeks} أسبوع`
+            `${days}ي`
         );
     }
 
-    if (days) {
+    if (hours > 0) {
         parts.push(
-            `${days} يوم`
+            `${hours}س`
         );
     }
 
-    if (hours) {
+    if (minutes > 0) {
         parts.push(
-            `${hours} ساعة`
+            `${minutes}د`
         );
     }
 
-    if (minutes) {
+    if (
+        seconds > 0 ||
+        parts.length === 0
+    ) {
+
         parts.push(
-            `${minutes} دقيقة`
+            `${seconds}ث`
         );
     }
 
-    if (seconds) {
-        parts.push(
-            `${seconds} ثانية`
-        );
-    }
-
-    return (
-        parts.join(" و ") ||
-        "0 ثانية"
-    );
+    return parts.join(" ");
 }
 
-/* =========================================================
-   EMBEDS
-========================================================= */
 
-function errorEmbed(message) {
-
-    return new EmbedBuilder()
-        .setColor(0xED4245)
-        .setDescription(
-            `❌ ${message}`
-        );
-}
-
-function successEmbed(
-    title,
-    description
-) {
-
-    const embed =
-        new EmbedBuilder()
-            .setColor(0x57F287)
-            .setTitle(
-                `✅ ${title}`
-            );
-
-    if (description) {
-        embed.setDescription(
-            description
-        );
-    }
-
-    return embed;
-}
-
-/* =========================================================
-   LOGS
-========================================================= */
+// ==================================================
+// SEND LOG
+// ==================================================
 
 async function sendLog(
     guild,
@@ -1107,10 +1259,7 @@ async function sendLog(
                 guildData.logsChannelId
             );
 
-        if (
-            !channel ||
-            !channel.isTextBased()
-        ) {
+        if (!channel) {
             return;
         }
 
@@ -1119,380 +1268,368 @@ async function sendLog(
                 .setColor(color)
                 .setTitle(title)
                 .setDescription(
-                    description
+                    description || "بدون تفاصيل."
                 )
-                .setFooter({
-                    text:
-                        guild.name
-                })
                 .setTimestamp();
 
         await channel.send({
-            embeds: [
-                embed
-            ]
+            embeds: [embed]
         });
 
     } catch (error) {
 
         console.error(
-            "❌ Log Error:",
+            "Send Log Error:",
             error
         );
     }
 }
 
-/* =========================================================
-   MEMBER RESOLVER
-========================================================= */
+
+// ==================================================
+// MEMBER RESOLVER
+// ==================================================
 
 async function resolveMember(
     guild,
-    value
+    input
 ) {
 
-    if (!value) {
+    if (!guild || !input) {
         return null;
     }
 
-    const id =
-        String(value)
-            .replace(
+    const value =
+        String(input).trim();
+
+    const mentionMatch =
+        value.match(
+            /^<@!?(\d+)>$/
+        );
+
+    const userId =
+        mentionMatch
+            ? mentionMatch[1]
+            : value.replace(
                 /[<@!>]/g,
                 ""
             );
 
-    try {
+    if (
+        /^\d{17,20}$/.test(
+            userId
+        )
+    ) {
 
-        return await guild.members.fetch(
-            id
+        try {
+
+            return await guild.members.fetch(
+                userId
+            );
+
+        } catch {
+
+            return null;
+        }
+    }
+
+    const lower =
+        value.toLowerCase();
+
+    const cached =
+        guild.members.cache.find(
+            member =>
+                member.user.username.toLowerCase() === lower ||
+                member.displayName.toLowerCase() === lower ||
+                member.user.tag.toLowerCase() === lower
         );
 
-    } catch {
-
-        return null;
-    }
+    return cached || null;
 }
 
-/* =========================================================
-   WARNING DATA
-========================================================= */
 
-function getWarningList(
-    guildId,
-    userId
+// ==================================================
+// WARNING DATA
+// ==================================================
+
+function getGuildWarnings(
+    guildId
 ) {
 
     if (
         !data.warnings[guildId]
     ) {
+
         data.warnings[guildId] = {};
     }
 
-    if (
-        !data.warnings[guildId][userId]
-    ) {
-        data.warnings[guildId][userId] = [];
-    }
-
-    return data.warnings[guildId][userId];
+    return data.warnings[guildId];
 }
 
-/* =========================================================
-   JAIL DATA
-========================================================= */
 
-function getJailData(
+function getUserWarnings(
     guildId,
     userId
+) {
+
+    const guildWarnings =
+        getGuildWarnings(
+            guildId
+        );
+
+    if (
+        !guildWarnings[userId]
+    ) {
+
+        guildWarnings[userId] = [];
+    }
+
+    return guildWarnings[userId];
+}
+
+
+// ==================================================
+// JAIL DATA
+// ==================================================
+
+function getGuildJails(
+    guildId
 ) {
 
     if (
         !data.jails[guildId]
     ) {
-        data.jails[guildId] = {};
+
+        data.jails[guildId] = [];
     }
 
-    return (
-        data.jails[guildId][userId] ||
-        null
-    );
+    return data.jails[guildId];
 }
 
-/* =========================================================
-   TICKET DATA
-========================================================= */
 
-function getTicketData(
-    guildId,
-    channelId
-) {
-
-    if (
-        !data.tickets[guildId]
-    ) {
-        data.tickets[guildId] = {};
-    }
-
-    return (
-        data.tickets[guildId][channelId] ||
-        null
-    );
-}
-
-/* =========================================================
-   CREATE TICKET DATA
-========================================================= */
-
-function createTicketObject(
-    guildId,
-    channelId,
-    ownerId,
-    panelId = null,
-    panelName = null
-) {
-
-    if (
-        !data.tickets[guildId]
-    ) {
-        data.tickets[guildId] = {};
-    }
-
-    const ticket = {
-
-        channelId,
-
-        ownerId,
-
-        claimedBy: null,
-
-        panelId,
-
-        panelName,
-
-        createdAt:
-            Date.now(),
-
-        closedAt: null,
-
-        closedBy: null,
-
-        status: "open"
-    };
-
-    data.tickets[guildId][channelId] =
-        ticket;
-
-    saveData();
-
-    return ticket;
-}
-
-/* =========================================================
-   ANTI SPAM
-========================================================= */
-
-const spamTracker =
-    new Map();
-
-function getSpamKey(
+function getActiveJail(
     guildId,
     userId
 ) {
 
+    const jails =
+        getGuildJails(
+            guildId
+        );
+
+    const now =
+        Date.now();
+
     return (
-        `${guildId}:${userId}`
+        jails.find(
+            jail =>
+                jail.userId === userId &&
+                jail.expiresAt > now
+        ) || null
     );
 }
 
-/* =========================================================
-   NEXT PART
-========================================================= */
 
-/*
-   الجزء القادم يحتوي على:
+// ==================================================
+// TICKET DATA
+// ==================================================
 
-   /ban
-   /unban
-   /warn
-   /warning
-   /timeout
-   /jail
-   /time
-   /close
-   /delete
-   /points
-   /xp
-   /balance
-   /pay
-   /setup
-   /panel
-   /setup-ticket-panel
-   /stats
-   /help
+function getGuildTickets(
+    guildId
+) {
 
-   + التسجيل الحقيقي لكل Slash Commands.
-*/
-// ============================================================
-// PART 2 — SLASH COMMANDS
-// ============================================================
+    if (
+        !data.tickets[guildId]
+    ) {
+
+        data.tickets[guildId] = [];
+    }
+
+    return data.tickets[guildId];
+}
+
+
+function findTicketByChannel(
+    guildId,
+    channelId
+) {
+
+    const tickets =
+        getGuildTickets(
+            guildId
+        );
+
+    return (
+        tickets.find(
+            ticket =>
+                ticket.channelId ===
+                channelId &&
+                !ticket.closed
+        ) || null
+    );
+}
+
+
+function findOpenTicketByUser(
+    guildId,
+    userId
+) {
+
+    const tickets =
+        getGuildTickets(
+            guildId
+        );
+
+    return (
+        tickets.find(
+            ticket =>
+                ticket.userId ===
+                userId &&
+                !ticket.closed
+        ) || null
+    );
+}
+
+
+// ==================================================
+// TICKET PANEL DATA
+// ==================================================
+
+function getGuildTicketPanels(
+    guildId
+) {
+
+    if (
+        !data.ticketPanels[guildId]
+    ) {
+
+        data.ticketPanels[guildId] = {};
+    }
+
+    return data.ticketPanels[guildId];
+}
+
+
+// ==================================================
+// RATING DATA
+// ==================================================
+
+function getGuildRatings(
+    guildId
+) {
+
+    if (
+        !data.ratings[guildId]
+    ) {
+
+        data.ratings[guildId] = {};
+    }
+
+    return data.ratings[guildId];
+}
+
+
+function getGuildPendingRatings(
+    guildId
+) {
+
+    if (
+        !data.pendingRatings[guildId]
+    ) {
+
+        data.pendingRatings[guildId] = {};
+    }
+
+    return data.pendingRatings[guildId];
+}
+
+
+// ==================================================
+// PREFIX ERROR
+// ==================================================
+
+async function prefixError(
+    message,
+    content
+) {
+
+    return message.reply({
+        content:
+            `❌ ${content}`
+    }).catch(() => {});
+}
+
+
+// ==================================================
+// PREFIX SUCCESS
+// ==================================================
+
+async function sendPrefixResult(
+    message,
+    content
+) {
+
+    return message.reply({
+        content:
+            content
+    }).catch(() => {});
+}
+
+
+// ==================================================
+// CHECK TEXT CHANNEL
+// ==================================================
+
+function isTextChannel(
+    channel
+) {
+
+    return (
+        channel &&
+        (
+            channel.type ===
+                ChannelType.GuildText ||
+
+            channel.type ===
+                ChannelType.GuildAnnouncement ||
+
+            channel.type ===
+                ChannelType.PublicThread ||
+
+            channel.type ===
+                ChannelType.PrivateThread
+        )
+    );
+}
+
+
+// ==================================================
+// END PART 1
+// ==================================================
+// ==================================================
+// PART 2 - SLASH COMMANDS / INTERACTIONS / SETUP
+// ==================================================
+
+
+// ==================================================
+// SLASH COMMANDS
+// ==================================================
 
 const slashCommands = [
 
-    // --------------------------------------------------------
-    // /ban
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("ban")
-        .setDescription("حظر عضو من السيرفر")
-        .addUserOption(option =>
-            option
-                .setName("member")
-                .setDescription("العضو المراد حظره")
-                .setRequired(true)
-        )
-        .addStringOption(option =>
-            option
-                .setName("reason")
-                .setDescription("سبب الحظر")
-                .setRequired(false)
-        ),
+    // ----------------------------------------------
+    // HELP
+    // ----------------------------------------------
 
-    // --------------------------------------------------------
-    // /unban
-    // --------------------------------------------------------
     new SlashCommandBuilder()
-        .setName("unban")
-        .setDescription("إلغاء حظر عضو")
-        .addStringOption(option =>
-            option
-                .setName("userid")
-                .setDescription("Discord User ID")
-                .setRequired(true)
-        )
-        .addStringOption(option =>
-            option
-                .setName("reason")
-                .setDescription("سبب إلغاء الحظر")
-                .setRequired(false)
-        ),
+        .setName("help")
+        .setDescription("عرض جميع أوامر البوت"),
 
-    // --------------------------------------------------------
-    // /warn
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("warn")
-        .setDescription("إعطاء تحذير لعضو")
-        .addUserOption(option =>
-            option
-                .setName("member")
-                .setDescription("العضو")
-                .setRequired(true)
-        )
-        .addStringOption(option =>
-            option
-                .setName("duration")
-                .setDescription("مدة التحذير مثل 10m أو 1h أو 1d")
-                .setRequired(true)
-        )
-        .addStringOption(option =>
-            option
-                .setName("reason")
-                .setDescription("سبب التحذير")
-                .setRequired(true)
-        ),
 
-    // --------------------------------------------------------
-    // /warning
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("warning")
-        .setDescription("إعطاء تحذير لعضو")
-        .addUserOption(option =>
-            option
-                .setName("member")
-                .setDescription("العضو")
-                .setRequired(true)
-        )
-        .addStringOption(option =>
-            option
-                .setName("duration")
-                .setDescription("مدة التحذير")
-                .setRequired(true)
-        )
-        .addStringOption(option =>
-            option
-                .setName("reason")
-                .setDescription("سبب التحذير")
-                .setRequired(true)
-        ),
+    // ----------------------------------------------
+    // POINTS
+    // ----------------------------------------------
 
-    // --------------------------------------------------------
-    // /timeout
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("timeout")
-        .setDescription("إعطاء Timeout لعضو")
-        .addUserOption(option =>
-            option
-                .setName("member")
-                .setDescription("العضو")
-                .setRequired(true)
-        )
-        .addStringOption(option =>
-            option
-                .setName("duration")
-                .setDescription("المدة مثل 10m أو 1h أو 1d")
-                .setRequired(true)
-        )
-        .addStringOption(option =>
-            option
-                .setName("reason")
-                .setDescription("سبب التايم")
-                .setRequired(true)
-        ),
-
-    // --------------------------------------------------------
-    // /jail
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("jail")
-        .setDescription("سجن عضو")
-        .addUserOption(option =>
-            option
-                .setName("member")
-                .setDescription("العضو")
-                .setRequired(true)
-        )
-        .addStringOption(option =>
-            option
-                .setName("duration")
-                .setDescription("مدة السجن")
-                .setRequired(true)
-        )
-        .addStringOption(option =>
-            option
-                .setName("reason")
-                .setDescription("سبب السجن")
-                .setRequired(true)
-        ),
-
-    // --------------------------------------------------------
-    // /time
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("time")
-        .setDescription("معرفة الوقت المتبقي للسجن")
-        .addUserOption(option =>
-            option
-                .setName("member")
-                .setDescription("العضو")
-                .setRequired(false)
-        ),
-
-    // --------------------------------------------------------
-    // /points
-    // --------------------------------------------------------
     new SlashCommandBuilder()
         .setName("points")
         .setDescription("عرض نقاط العضو")
@@ -1503,9 +1640,11 @@ const slashCommands = [
                 .setRequired(false)
         ),
 
-    // --------------------------------------------------------
-    // /xp
-    // --------------------------------------------------------
+
+    // ----------------------------------------------
+    // XP
+    // ----------------------------------------------
+
     new SlashCommandBuilder()
         .setName("xp")
         .setDescription("عرض XP العضو")
@@ -1516,12 +1655,14 @@ const slashCommands = [
                 .setRequired(false)
         ),
 
-    // --------------------------------------------------------
-    // /balance
-    // --------------------------------------------------------
+
+    // ----------------------------------------------
+    // BALANCE
+    // ----------------------------------------------
+
     new SlashCommandBuilder()
         .setName("balance")
-        .setDescription("عرض رصيد العضو")
+        .setDescription("عرض الرصيد")
         .addUserOption(option =>
             option
                 .setName("member")
@@ -1529,12 +1670,14 @@ const slashCommands = [
                 .setRequired(false)
         ),
 
-    // --------------------------------------------------------
-    // /pay
-    // --------------------------------------------------------
+
+    // ----------------------------------------------
+    // PAY
+    // ----------------------------------------------
+
     new SlashCommandBuilder()
         .setName("pay")
-        .setDescription("تحويل عملة لعضو")
+        .setDescription("تحويل عملات لعضو")
         .addUserOption(option =>
             option
                 .setName("member")
@@ -1549,12 +1692,14 @@ const slashCommands = [
                 .setRequired(true)
         ),
 
-    // --------------------------------------------------------
-    // /addcoins
-    // --------------------------------------------------------
+
+    // ----------------------------------------------
+    // ADD COINS
+    // ----------------------------------------------
+
     new SlashCommandBuilder()
         .setName("addcoins")
-        .setDescription("إضافة عملة لعضو")
+        .setDescription("إضافة عملات لعضو")
         .addUserOption(option =>
             option
                 .setName("member")
@@ -1569,12 +1714,14 @@ const slashCommands = [
                 .setRequired(true)
         ),
 
-    // --------------------------------------------------------
-    // /removecoins
-    // --------------------------------------------------------
+
+    // ----------------------------------------------
+    // REMOVE COINS
+    // ----------------------------------------------
+
     new SlashCommandBuilder()
         .setName("removecoins")
-        .setDescription("خصم عملة من عضو")
+        .setDescription("خصم عملات من عضو")
         .addUserOption(option =>
             option
                 .setName("member")
@@ -1589,9 +1736,11 @@ const slashCommands = [
                 .setRequired(true)
         ),
 
-    // --------------------------------------------------------
-    // /setcoins
-    // --------------------------------------------------------
+
+    // ----------------------------------------------
+    // SET COINS
+    // ----------------------------------------------
+
     new SlashCommandBuilder()
         .setName("setcoins")
         .setDescription("تحديد رصيد عضو")
@@ -1609,12 +1758,14 @@ const slashCommands = [
                 .setRequired(true)
         ),
 
-    // --------------------------------------------------------
-    // /stats
-    // --------------------------------------------------------
+
+    // ----------------------------------------------
+    // STATS
+    // ----------------------------------------------
+
     new SlashCommandBuilder()
         .setName("stats")
-        .setDescription("عرض إحصائيات عضو")
+        .setDescription("عرض إحصائيات العضو")
         .addUserOption(option =>
             option
                 .setName("member")
@@ -1622,112 +1773,300 @@ const slashCommands = [
                 .setRequired(false)
         ),
 
-    // --------------------------------------------------------
-    // /close
-    // --------------------------------------------------------
+
+    // ----------------------------------------------
+    // BAN
+    // ----------------------------------------------
+
+    new SlashCommandBuilder()
+        .setName("ban")
+        .setDescription("حظر عضو")
+        .addUserOption(option =>
+            option
+                .setName("member")
+                .setDescription("العضو")
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName("reason")
+                .setDescription("سبب الحظر")
+                .setRequired(false)
+        ),
+
+
+    // ----------------------------------------------
+    // UNBAN
+    // ----------------------------------------------
+
+    new SlashCommandBuilder()
+        .setName("unban")
+        .setDescription("فك حظر عضو")
+        .addStringOption(option =>
+            option
+                .setName("userid")
+                .setDescription("ID العضو")
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName("reason")
+                .setDescription("سبب فك الحظر")
+                .setRequired(false)
+        ),
+
+
+    // ----------------------------------------------
+    // WARN
+    // ----------------------------------------------
+
+    new SlashCommandBuilder()
+        .setName("warn")
+        .setDescription("إعطاء تحذير لعضو")
+        .addUserOption(option =>
+            option
+                .setName("member")
+                .setDescription("العضو")
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName("duration")
+                .setDescription("مدة التحذير مثل 30m أو 1h أو 1d")
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName("reason")
+                .setDescription("سبب التحذير")
+                .setRequired(true)
+        ),
+
+
+    // ----------------------------------------------
+    // WARNING
+    // ----------------------------------------------
+
+    new SlashCommandBuilder()
+        .setName("warning")
+        .setDescription("إعطاء تحذير لعضو")
+        .addUserOption(option =>
+            option
+                .setName("member")
+                .setDescription("العضو")
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName("duration")
+                .setDescription("مدة التحذير مثل 30m أو 1h أو 1d")
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName("reason")
+                .setDescription("سبب التحذير")
+                .setRequired(true)
+        ),
+
+
+    // ----------------------------------------------
+    // TIMEOUT
+    // ----------------------------------------------
+
+    new SlashCommandBuilder()
+        .setName("timeout")
+        .setDescription("تايم أوت لعضو")
+        .addUserOption(option =>
+            option
+                .setName("member")
+                .setDescription("العضو")
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName("duration")
+                .setDescription("المدة مثل 10m أو 1h أو 1d")
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName("reason")
+                .setDescription("سبب التايم أوت")
+                .setRequired(true)
+        ),
+
+
+    // ----------------------------------------------
+    // JAIL
+    // ----------------------------------------------
+
+    new SlashCommandBuilder()
+        .setName("jail")
+        .setDescription("سجن عضو")
+        .addUserOption(option =>
+            option
+                .setName("member")
+                .setDescription("العضو")
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName("duration")
+                .setDescription("مدة السجن مثل 10m أو 1h أو 1d")
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName("reason")
+                .setDescription("سبب السجن")
+                .setRequired(true)
+        ),
+
+
+    // ----------------------------------------------
+    // TIME
+    // ----------------------------------------------
+
+    new SlashCommandBuilder()
+        .setName("time")
+        .setDescription("عرض مدة السجن المتبقية")
+        .addUserOption(option =>
+            option
+                .setName("member")
+                .setDescription("العضو")
+                .setRequired(false)
+        ),
+
+
+    // ----------------------------------------------
+    // CLOSE
+    // ----------------------------------------------
+
     new SlashCommandBuilder()
         .setName("close")
         .setDescription("إغلاق التذكرة الحالية"),
 
-    // --------------------------------------------------------
-    // /delete
-    // --------------------------------------------------------
+
+    // ----------------------------------------------
+    // DELETE
+    // ----------------------------------------------
+
     new SlashCommandBuilder()
         .setName("delete")
         .setDescription("حذف التذكرة الحالية"),
 
-    // --------------------------------------------------------
-    // /setup
-    // --------------------------------------------------------
+
+    // ----------------------------------------------
+    // SETUP
+    // ----------------------------------------------
+
     new SlashCommandBuilder()
         .setName("setup")
-        .setDescription("إعداد البوت في السيرفر"),
+        .setDescription("إظهار إعدادات البوت الأساسية"),
 
-    // --------------------------------------------------------
-    // /setup-ticket-panel
-    // --------------------------------------------------------
+
+    // ----------------------------------------------
+    // SETUP TICKET PANEL
+    // ----------------------------------------------
+
     new SlashCommandBuilder()
         .setName("setup-ticket-panel")
-        .setDescription("إنشاء وإرسال لوحة تذاكر جديدة")
+        .setDescription("إنشاء بانل تذاكر")
         .addStringOption(option =>
             option
                 .setName("name")
-                .setDescription("اسم لوحة التذاكر")
+                .setDescription("اسم البانل")
                 .setRequired(true)
         )
         .addStringOption(option =>
             option
                 .setName("description")
-                .setDescription("وصف لوحة التذاكر")
+                .setDescription("وصف البانل")
                 .setRequired(false)
         )
         .addStringOption(option =>
             option
                 .setName("button")
-                .setDescription("اسم زر فتح التذكرة")
+                .setDescription("اسم الزر")
                 .setRequired(false)
         )
         .addChannelOption(option =>
             option
                 .setName("category")
                 .setDescription("كاتيجوري التذاكر")
-                .addChannelTypes(ChannelType.GuildCategory)
+                .addChannelTypes(
+                    ChannelType.GuildCategory
+                )
                 .setRequired(true)
-        ),
-
-    // --------------------------------------------------------
-    // /help
-    // --------------------------------------------------------
-    new SlashCommandBuilder()
-        .setName("help")
-        .setDescription("عرض جميع أوامر البوت")
-
-].map(command => command.toJSON());
+        )
+];
 
 
-// ============================================================
+// ==================================================
 // REGISTER SLASH COMMANDS
-// ============================================================
+// ==================================================
 
 async function registerSlashCommands() {
 
     try {
 
-        const rest = new REST({
-            version: "10"
-        }).setToken(TOKEN);
+        if (
+            !client.user
+        ) {
+            console.error(
+                "❌ لا يمكن تسجيل Slash Commands قبل تسجيل الدخول."
+            );
 
-        console.log("🔄 جاري تسجيل أوامر Slash...");
+            return;
+        }
+
+        const rest =
+            new REST({
+                version: "10"
+            }).setToken(
+                TOKEN
+            );
 
         await rest.put(
-            Routes.applicationCommands(client.user.id),
+            Routes.applicationCommands(
+                client.user.id
+            ),
             {
-                body: slashCommands
+                body:
+                    slashCommands.map(
+                        command =>
+                            command.toJSON()
+                    )
             }
         );
 
         console.log(
-            `✅ تم تسجيل ${slashCommands.length} أمر Slash بنجاح.`
+            `✅ Registered ${slashCommands.length} Slash Commands.`
         );
 
     } catch (error) {
 
         console.error(
-            "❌ خطأ أثناء تسجيل أوامر Slash:",
+            "Slash Commands Registration Error:",
             error
         );
-
     }
 }
 
 
-// ============================================================
-// COMMAND PERMISSION HELPERS
-// ============================================================
+// ==================================================
+// INTERACTION HELPERS
+// ==================================================
 
-function requireGuild(interaction) {
+function requireGuild(
+    interaction
+) {
 
-    if (!interaction.guild) {
+    if (
+        !interaction.guild
+    ) {
+
         return false;
     }
 
@@ -1735,33 +2074,40 @@ function requireGuild(interaction) {
 }
 
 
-function requireStaff(interaction, level = 1) {
+function requireStaff(
+    interaction
+) {
 
-    if (!interaction.guild) {
+    if (
+        !interaction.guild ||
+        !interaction.member
+    ) {
         return false;
     }
 
     const guildData =
-        getGuildData(interaction.guild.id);
-
-    const currentLevel =
-        getStaffLevel(
-            interaction.member,
-            guildData
+        getGuildData(
+            interaction.guild.id
         );
 
-    return currentLevel >= level;
+    return isStaff(
+        interaction.member,
+        guildData
+    );
 }
 
 
-function getInteractionMember(interaction) {
+function getInteractionMember(
+    interaction
+) {
 
-    return (
-        interaction.member ||
-        interaction.guild?.members.cache.get(
-            interaction.user.id
-        )
-    );
+    if (
+        !interaction.guild
+    ) {
+        return null;
+    }
+
+    return interaction.member;
 }
 
 
@@ -1770,8 +2116,16 @@ async function resolveInteractionMember(
     optionName = "member"
 ) {
 
+    if (
+        !interaction.guild
+    ) {
+        return null;
+    }
+
     const user =
-        interaction.options.getUser(optionName);
+        interaction.options.getUser(
+            optionName
+        );
 
     if (!user) {
         return null;
@@ -1790,1459 +2144,1714 @@ async function resolveInteractionMember(
 }
 
 
-// ============================================================
-// TARGET HIERARCHY CHECK
-// ============================================================
+// ==================================================
+// INTERACTION TARGET CHECK
+// ==================================================
 
 function canModerateInteractionTarget(
     interaction,
-    target
+    target,
+    guildData
 ) {
 
-    if (!target) {
-        return false;
-    }
-
-    const guildData =
-        getGuildData(
-            interaction.guild.id
-        );
-
-    const actorLevel =
-        getStaffLevel(
-            interaction.member,
-            guildData
-        );
-
-    if (actorLevel >= 4) {
-        return true;
-    }
-
-    const targetLevel =
-        getStaffLevel(
-            target,
-            guildData
-        );
-
-    if (targetLevel >= actorLevel) {
-        return false;
-    }
-
     if (
-        target.id === interaction.user.id
+        !interaction.member ||
+        !target
     ) {
         return false;
     }
 
-    return true;
+    return canModerateTarget(
+        interaction.member,
+        target,
+        guildData
+    );
 }
 
 
-// ============================================================
-// INTERACTION CREATE
-// ============================================================
+// ==================================================
+// SLASH INTERACTION HANDLER
+// ==================================================
 
 client.on(
     "interactionCreate",
-    async interaction => {
+    async (interaction) => {
 
         try {
 
-            // =================================================
-            // CHAT INPUT / SLASH COMMANDS
-            // =================================================
+            if (
+                !interaction.isChatInputCommand()
+            ) {
+                return;
+            }
+
+
+            // ==============================================
+            // HELP
+            // ==============================================
 
             if (
-                interaction.isChatInputCommand()
+                interaction.commandName ===
+                "help"
             ) {
 
-                if (!interaction.guild) {
+                const embed =
+                    new EmbedBuilder()
+                        .setColor(0x5865F2)
+                        .setTitle(
+                            "🤖 أوامر البوت"
+                        )
+                        .setDescription(
+                            "قائمة الأوامر المتاحة في البوت."
+                        )
+                        .addFields(
 
-                    await interaction.reply({
-                        content:
-                            "❌ هذا الأمر يعمل داخل السيرفر فقط.",
-                        ephemeral: true
-                    });
+                            {
+                                name: "🛡️ الإدارة",
+                                value:
+                                    [
+                                        "`/ban`",
+                                        "`/unban`",
+                                        "`/warn`",
+                                        "`/warning`",
+                                        "`/timeout`",
+                                        "`/jail`",
+                                        "`/delete`",
+                                        "`/close`"
+                                    ].join("\n"),
+                                inline: true
+                            },
 
-                    return;
-                }
+                            {
+                                name: "🎫 التذاكر",
+                                value:
+                                    [
+                                        "`/setup-ticket-panel`",
+                                        "`/close`",
+                                        "`/delete`"
+                                    ].join("\n"),
+                                inline: true
+                            },
 
+                            {
+                                name: "📊 الأعضاء",
+                                value:
+                                    [
+                                        "`/points`",
+                                        "`/xp`",
+                                        "`/stats`",
+                                        "`/time`",
+                                        "`/balance`"
+                                    ].join("\n"),
+                                inline: true
+                            },
 
-                const command =
-                    interaction.commandName;
-
-
-                // =============================================
-                // /help
-                // =============================================
-
-                if (
-                    command === "help"
-                ) {
-
-                    const embed =
-                        new EmbedBuilder()
-                            .setColor(0x5865F2)
-                            .setTitle(
-                                "🤖 أوامر البوت"
-                            )
-                            .setDescription(
-                                "البوت الاحترافي المتعدد الأنظمة"
-                            )
-                            .addFields(
-
-                                {
-                                    name: "🛡️ الإدارة",
-                                    value:
-                                        "`/ban`\n" +
-                                        "`/unban`\n" +
-                                        "`/warn`\n" +
-                                        "`/warning`\n" +
-                                        "`/timeout`\n" +
-                                        "`/jail`\n" +
-                                        "`/time`"
-                                },
-
-                                {
-                                    name: "🎫 التذاكر",
-                                    value:
-                                        "`/close`\n" +
-                                        "`/delete`\n" +
-                                        "`/setup-ticket-panel`"
-                                },
-
-                                {
-                                    name: "⭐ النقاط و XP",
-                                    value:
-                                        "`/points`\n" +
-                                        "`/xp`\n" +
-                                        "`/stats`"
-                                },
-
-                                {
-                                    name: "💰 الاقتصاد",
-                                    value:
-                                        "`/balance`\n" +
-                                        "`/pay`\n" +
-                                        "`/addcoins`\n" +
-                                        "`/removecoins`\n" +
+                            {
+                                name: "💰 الاقتصاد",
+                                value:
+                                    [
+                                        "`/balance`",
+                                        "`/pay`",
+                                        "`/addcoins`",
+                                        "`/removecoins`",
                                         "`/setcoins`"
-                                },
+                                    ].join("\n"),
+                                inline: true
+                            },
 
-                                {
-                                    name: "⚙️ الإعداد",
-                                    value:
-                                        "`/setup`"
-                                }
-
-                            )
-                            .setTimestamp();
-
-                    await interaction.reply({
-                        embeds: [embed]
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /points
-                // =============================================
-
-                if (
-                    command === "points"
-                ) {
-
-                    const target =
-                        await resolveInteractionMember(
-                            interaction
-                        );
-
-                    const member =
-                        target ||
-                        interaction.member;
-
-                    const user =
-                        getUserData(
-                            interaction.guild.id,
-                            member.id
-                        );
-
-                    await interaction.reply({
-                        embeds: [
-                            buildPointsEmbed(
-                                member,
-                                user
-                            )
-                        ]
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /xp
-                // =============================================
-
-                if (
-                    command === "xp"
-                ) {
-
-                    const target =
-                        await resolveInteractionMember(
-                            interaction
-                        );
-
-                    const member =
-                        target ||
-                        interaction.member;
-
-                    const user =
-                        getUserData(
-                            interaction.guild.id,
-                            member.id
-                        );
-
-                    await interaction.reply({
-                        embeds: [
-                            buildXPEmbed(
-                                member,
-                                user
-                            )
-                        ]
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /balance
-                // =============================================
-
-                if (
-                    command === "balance"
-                ) {
-
-                    const target =
-                        await resolveInteractionMember(
-                            interaction
-                        );
-
-                    const member =
-                        target ||
-                        interaction.member;
-
-                    const guildData =
-                        getGuildData(
-                            interaction.guild.id
-                        );
-
-                    const user =
-                        getUserData(
-                            interaction.guild.id,
-                            member.id
-                        );
-
-                    await interaction.reply({
-                        embeds: [
-                            buildBalanceEmbed(
-                                member,
-                                user,
-                                guildData
-                            )
-                        ]
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /stats
-                // =============================================
-
-                if (
-                    command === "stats"
-                ) {
-
-                    const target =
-                        await resolveInteractionMember(
-                            interaction
-                        );
-
-                    const member =
-                        target ||
-                        interaction.member;
-
-                    const user =
-                        getUserData(
-                            interaction.guild.id,
-                            member.id
-                        );
-
-                    const stats =
-                        getStats(
-                            interaction.guild.id,
-                            member.id
-                        );
-
-                    const embed =
-                        new EmbedBuilder()
-                            .setColor(0x5865F2)
-                            .setTitle(
-                                `📊 إحصائيات ${member.user.username}`
-                            )
-                            .setThumbnail(
-                                member.user.displayAvatarURL({
-                                    size: 256
-                                })
-                            )
-                            .addFields(
-
-                                {
-                                    name: "⚠️ التحذيرات",
-                                    value:
-                                        String(
-                                            user.warnings || 0
-                                        ),
-                                    inline: true
-                                },
-
-                                {
-                                    name: "⏱️ التايم",
-                                    value:
-                                        String(
-                                            user.timeouts || 0
-                                        ),
-                                    inline: true
-                                },
-
-                                {
-                                    name: "🔒 السجن",
-                                    value:
-                                        String(
-                                            user.jails || 0
-                                        ),
-                                    inline: true
-                                },
-
-                                {
-                                    name: "🔨 الباند",
-                                    value:
-                                        String(
-                                            user.bans || 0
-                                        ),
-                                    inline: true
-                                },
-
-                                {
-                                    name: "🎫 التذاكر",
-                                    value:
-                                        String(
-                                            user.ticketsClaimed || 0
-                                        ),
-                                    inline: true
-                                },
-
-                                {
-                                    name: "⭐ النقاط",
-                                    value:
-                                        String(
-                                            user.actionPoints || 0
-                                        ),
-                                    inline: true
-                                },
-
-                                {
-                                    name: "✨ XP",
-                                    value:
-                                        String(
-                                            user.xp || 0
-                                        ),
-                                    inline: true
-                                },
-
-                                {
-                                    name: "💬 الرسائل",
-                                    value:
-                                        String(
-                                            user.messages || 0
-                                        ),
-                                    inline: true
-                                },
-
-                                {
-                                    name: "⭐ التقييمات الجيدة",
-                                    value:
-                                        String(
-                                            user.goodRatings || 0
-                                        ),
-                                    inline: true
-                                }
-
-                            )
-                            .setTimestamp();
-
-                    await interaction.reply({
-                        embeds: [embed]
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /pay
-                // =============================================
-
-                if (
-                    command === "pay"
-                ) {
-
-                    const guildData =
-                        getGuildData(
-                            interaction.guild.id
-                        );
-
-                    if (
-                        guildData.currencyEnabled === false
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ نظام العملة غير مفعل.",
-                            ephemeral: true
+                            {
+                                name: "⚙️ الإعدادات",
+                                value:
+                                    [
+                                        "`/setup`",
+                                        "`/setup-ticket-panel`"
+                                    ].join("\n"),
+                                inline: true
+                            }
+                        )
+                        .setFooter({
+                            text:
+                                "Professional Discord Bot"
                         });
 
-                        return;
-                    }
+                return interaction.reply({
+                    embeds: [embed],
+                    ephemeral: true
+                });
+            }
 
-                    const target =
-                        await resolveInteractionMember(
-                            interaction
-                        );
 
-                    const amount =
-                        interaction.options.getInteger(
-                            "amount"
-                        );
+            // ==============================================
+            // REQUIRE GUILD
+            // ==============================================
 
-                    if (!target) {
+            if (
+                !requireGuild(
+                    interaction
+                )
+            ) {
 
-                        await interaction.reply({
-                            content:
-                                "❌ لم أجد العضو.",
-                            ephemeral: true
-                        });
+                return interaction.reply({
+                    content:
+                        "❌ هذا الأمر يعمل داخل السيرفر فقط.",
+                    ephemeral: true
+                });
+            }
 
-                        return;
-                    }
 
-                    if (
-                        target.id ===
-                        interaction.user.id
-                    ) {
+            const guild =
+                interaction.guild;
 
-                        await interaction.reply({
-                            content:
-                                "❌ لا يمكنك تحويل العملة لنفسك.",
-                            ephemeral: true
-                        });
+            const guildData =
+                getGuildData(
+                    guild.id
+                );
 
-                        return;
-                    }
+            const command =
+                interaction.commandName;
 
-                    if (
-                        target.user.bot
-                    ) {
 
-                        await interaction.reply({
-                            content:
-                                "❌ لا يمكنك تحويل العملة لبوت.",
-                            ephemeral: true
-                        });
+            // ==============================================
+            // POINTS
+            // ==============================================
 
-                        return;
-                    }
+            if (
+                command ===
+                "points"
+            ) {
 
-                    const sender =
-                        getUserData(
-                            interaction.guild.id,
-                            interaction.user.id
-                        );
+                let target =
+                    interaction.member;
 
-                    if (
-                        Number(sender.coins || 0) <
-                        amount
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                `❌ رصيدك غير كافٍ.\nرصيدك الحالي: ${guildData.currencySymbol} ${sender.coins || 0}`,
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    removeCoins(
-                        interaction.guild.id,
-                        interaction.user.id,
-                        amount
+                const selectedUser =
+                    interaction.options.getUser(
+                        "member"
                     );
 
-                    addCoins(
-                        interaction.guild.id,
-                        target.id,
-                        amount
+                if (selectedUser) {
+
+                    target =
+                        await guild.members.fetch(
+                            selectedUser.id
+                        ).catch(
+                            () => null
+                        );
+
+                    if (!target) {
+
+                        return interaction.reply({
+                            content:
+                                "❌ لم أتمكن من العثور على العضو.",
+                            ephemeral: true
+                        });
+                    }
+                }
+
+                const user =
+                    getUserData(
+                        guild.id,
+                        target.id
                     );
 
-                    const symbol =
-                        guildData.currencySymbol;
-
-                    await interaction.reply({
-                        content:
-                            `✅ تم تحويل **${amount} ${symbol}** إلى ${target}.`
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /addcoins
-                // =============================================
-
-                if (
-                    command === "addcoins"
-                ) {
-
-                    if (
-                        !requireStaff(
-                            interaction,
-                            3
-                        )
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ هذا الأمر متاح للإدارة العليا والأونر فقط.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const target =
-                        await resolveInteractionMember(
-                            interaction
-                        );
-
-                    const amount =
-                        interaction.options.getInteger(
-                            "amount"
-                        );
-
-                    if (!target) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ العضو غير موجود.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    addCoins(
-                        interaction.guild.id,
-                        target.id,
-                        amount
+                const stats =
+                    getStats(
+                        guild.id,
+                        target.id
                     );
 
-                    const guildData =
-                        getGuildData(
-                            interaction.guild.id
-                        );
-
-                    await interaction.reply({
-                        content:
-                            `✅ تمت إضافة **${amount} ${guildData.currencySymbol}** إلى ${target}.`
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /removecoins
-                // =============================================
-
-                if (
-                    command === "removecoins"
-                ) {
-
-                    if (
-                        !requireStaff(
-                            interaction,
-                            3
+                const embed =
+                    new EmbedBuilder()
+                        .setColor(0xF1C40F)
+                        .setTitle(
+                            `⭐ نقاط ${target.displayName}`
                         )
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ هذا الأمر متاح للإدارة العليا والأونر فقط.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const target =
-                        await resolveInteractionMember(
-                            interaction
-                        );
-
-                    const amount =
-                        interaction.options.getInteger(
-                            "amount"
-                        );
-
-                    if (!target) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ العضو غير موجود.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const user =
-                        getUserData(
-                            interaction.guild.id,
-                            target.id
-                        );
-
-                    const current =
-                        Number(
-                            user.coins || 0
-                        );
-
-                    const removed =
-                        Math.min(
-                            current,
-                            amount
-                        );
-
-                    removeCoins(
-                        interaction.guild.id,
-                        target.id,
-                        removed
-                    );
-
-                    const guildData =
-                        getGuildData(
-                            interaction.guild.id
-                        );
-
-                    await interaction.reply({
-                        content:
-                            `✅ تم خصم **${removed} ${guildData.currencySymbol}** من ${target}.`
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /setcoins
-                // =============================================
-
-                if (
-                    command === "setcoins"
-                ) {
-
-                    if (
-                        !requireStaff(
-                            interaction,
-                            3
-                        )
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ هذا الأمر متاح للإدارة العليا والأونر فقط.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const target =
-                        await resolveInteractionMember(
-                            interaction
-                        );
-
-                    const amount =
-                        interaction.options.getInteger(
-                            "amount"
-                        );
-
-                    if (!target) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ العضو غير موجود.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const user =
-                        getUserData(
-                            interaction.guild.id,
-                            target.id
-                        );
-
-                    user.coins =
-                        amount;
-
-                    saveData();
-
-                    const guildData =
-                        getGuildData(
-                            interaction.guild.id
-                        );
-
-                    await interaction.reply({
-                        content:
-                            `✅ تم تحديد رصيد ${target} إلى **${amount} ${guildData.currencySymbol}**.`
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /ban
-                // =============================================
-
-                if (
-                    command === "ban"
-                ) {
-
-                    if (
-                        !requireStaff(
-                            interaction,
-                            1
-                        )
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ ليس لديك صلاحية استخدام الباند.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const target =
-                        await resolveInteractionMember(
-                            interaction
-                        );
-
-                    const reason =
-                        interaction.options.getString(
-                            "reason"
-                        ) ||
-                        "بدون سبب";
-
-                    if (!target) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ العضو غير موجود.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    if (
-                        !canModerateInteractionTarget(
-                            interaction,
-                            target
-                        )
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ لا يمكنك معاقبة عضو بنفس مستواك أو أعلى منك.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    if (
-                        !target.bannable
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ لا أستطيع حظر هذا العضو. تأكد أن رتبة البوت أعلى منه.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const result =
-                        await executeBan(
-                            interaction.guild,
-                            target,
-                            interaction.member,
-                            reason
-                        );
-
-                    await interaction.reply({
-                        content:
-                            result.message
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /unban
-                // =============================================
-
-                if (
-                    command === "unban"
-                ) {
-
-                    if (
-                        !requireStaff(
-                            interaction,
-                            1
-                        )
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ ليس لديك صلاحية استخدام فك الباند.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const userId =
-                        interaction.options.getString(
-                            "userid"
-                        );
-
-                    const reason =
-                        interaction.options.getString(
-                            "reason"
-                        ) ||
-                        "بدون سبب";
-
-                    try {
-
-                        await interaction.guild.bans.remove(
-                            userId,
-                            reason
-                        );
-
-                        await interaction.reply({
-                            content:
-                                `✅ تم إلغاء حظر العضو صاحب الـ ID:\n\`${userId}\``
-                        });
-
-                    } catch {
-
-                        await interaction.reply({
-                            content:
-                                "❌ لم أستطع إلغاء الحظر. تأكد من الـ ID وأن البوت لديه صلاحية Ban Members.",
-                            ephemeral: true
-                        });
-
-                    }
-
-                    return;
-                }
-
-
-                // =============================================
-                // /warn + /warning
-                // =============================================
-
-                if (
-                    command === "warn" ||
-                    command === "warning"
-                ) {
-
-                    if (
-                        !requireStaff(
-                            interaction,
-                            1
-                        )
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ ليس لديك صلاحية إعطاء تحذيرات.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const target =
-                        await resolveInteractionMember(
-                            interaction
-                        );
-
-                    const reason =
-                        interaction.options.getString(
-                            "reason"
-                        );
-
-                    const duration =
-                        interaction.options.getString(
-                            "duration"
-                        );
-
-                    if (!target) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ العضو غير موجود.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    if (
-                        !canModerateInteractionTarget(
-                            interaction,
-                            target
-                        )
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ لا يمكنك تحذير عضو بنفس مستواك أو أعلى منك.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const result =
-                        await executeWarn(
-                            interaction.guild,
-                            target,
-                            interaction.member,
-                            reason,
-                            duration
-                        );
-
-                    await interaction.reply({
-                        content:
-                            result.message
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /timeout
-                // =============================================
-
-                if (
-                    command === "timeout"
-                ) {
-
-                    if (
-                        !requireStaff(
-                            interaction,
-                            1
-                        )
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ ليس لديك صلاحية استخدام التايم.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const target =
-                        await resolveInteractionMember(
-                            interaction
-                        );
-
-                    const reason =
-                        interaction.options.getString(
-                            "reason"
-                        );
-
-                    const duration =
-                        interaction.options.getString(
-                            "duration"
-                        );
-
-                    if (!target) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ العضو غير موجود.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    if (
-                        !canModerateInteractionTarget(
-                            interaction,
-                            target
-                        )
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ لا يمكنك إعطاء تايم لعضو بنفس مستواك أو أعلى منك.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const result =
-                        await executeTimeout(
-                            interaction.guild,
-                            target,
-                            interaction.member,
-                            reason,
-                            duration
-                        );
-
-                    await interaction.reply({
-                        content:
-                            result.message
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /jail
-                // =============================================
-
-                if (
-                    command === "jail"
-                ) {
-
-                    if (
-                        !requireStaff(
-                            interaction,
-                            3
-                        )
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ السجن متاح للإدارة العليا والأونر فقط.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const target =
-                        await resolveInteractionMember(
-                            interaction
-                        );
-
-                    const reason =
-                        interaction.options.getString(
-                            "reason"
-                        );
-
-                    const duration =
-                        interaction.options.getString(
-                            "duration"
-                        );
-
-                    if (!target) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ العضو غير موجود.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    if (
-                        !canModerateInteractionTarget(
-                            interaction,
-                            target
-                        )
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ لا يمكنك سجن عضو بنفس مستواك أو أعلى منك.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const result =
-                        await executeJail(
-                            interaction.guild,
-                            target,
-                            interaction.member,
-                            reason,
-                            duration
-                        );
-
-                    await interaction.reply({
-                        content:
-                            result.message
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /time
-                // =============================================
-
-                if (
-                    command === "time"
-                ) {
-
-                    const target =
-                        await resolveInteractionMember(
-                            interaction
-                        );
-
-                    const member =
-                        target ||
-                        interaction.member;
-
-                    const jail =
-                        getActiveJail(
-                            interaction.guild.id,
-                            member.id
-                        );
-
-                    if (!jail) {
-
-                        await interaction.reply({
-                            content:
-                                `✅ ${member.id === interaction.user.id ? "أنت" : member.user.username} غير مسجون حاليًا.`
-                        });
-
-                        return;
-                    }
-
-                    const remaining =
-                        Math.max(
-                            0,
-                            jail.expiresAt -
-                            Date.now()
-                        );
-
-                    await interaction.reply({
-                        content:
-                            `🔒 ${member} مسجون حاليًا.\n⏳ الوقت المتبقي: **${formatDuration(remaining)}**`
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /close
-                // =============================================
-
-                if (
-                    command === "close"
-                ) {
-
-                    const result =
-                        await closeTicket(
-                            interaction.channel,
-                            interaction.member
-                        );
-
-                    await interaction.reply({
-                        content:
-                            result.message,
-                        ephemeral:
-                            !result.success
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /delete
-                // =============================================
-
-                if (
-                    command === "delete"
-                ) {
-
-                    const result =
-                        await deleteTicket(
-                            interaction.channel,
-                            interaction.member
-                        );
-
-                    await interaction.reply({
-                        content:
-                            result.message,
-                        ephemeral:
-                            !result.success
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /setup-ticket-panel
-                // =============================================
-
-                if (
-                    command === "setup-ticket-panel"
-                ) {
-
-                    if (
-                        !requireStaff(
-                            interaction,
-                            3
-                        )
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ إنشاء لوحات التذاكر متاح للإدارة العليا والأونر فقط.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const name =
-                        interaction.options.getString(
-                            "name"
-                        );
-
-                    const description =
-                        interaction.options.getString(
-                            "description"
-                        ) ||
-                        "اضغط على الزر بالأسفل لفتح تذكرة.";
-
-                    const buttonText =
-                        interaction.options.getString(
-                            "button"
-                        ) ||
-                        "🎫 فتح تذكرة";
-
-                    const category =
-                        interaction.options.getChannel(
-                            "category"
-                        );
-
-                    if (
-                        !category ||
-                        category.type !==
-                        ChannelType.GuildCategory
-                    ) {
-
-                        await interaction.reply({
-                            content:
-                                "❌ يجب اختيار Category صحيحة.",
-                            ephemeral: true
-                        });
-
-                        return;
-                    }
-
-                    const guildData =
-                        getGuildData(
-                            interaction.guild.id
-                        );
-
-                    guildData.ticketCategoryId =
-                        category.id;
-
-                    const panelId =
-                        `panel_${Date.now()}_${Math.random()
-                            .toString(36)
-                            .slice(2, 7)}`;
-
-                    guildData.ticketPanels[
-                        panelId
-                    ] = {
-
-                        id:
-                            panelId,
-
-                        name:
-                            name,
-
-                        description:
-                            description,
-
-                        buttonText:
-                            buttonText,
-
-                        categoryId:
-                            category.id,
-
-                        channelId:
-                            interaction.channel.id,
-
-                        createdBy:
-                            interaction.user.id,
-
-                        createdAt:
-                            Date.now()
-
-                    };
-
-                    saveData();
-
-                    const panelEmbed =
-                        new EmbedBuilder()
-                            .setColor(0x5865F2)
-                            .setTitle(
-                                `🎫 ${name}`
-                            )
-                            .setDescription(
-                                description
-                            )
-                            .setFooter({
-                                text:
-                                    "نظام التذاكر الاحترافي"
+                        .setThumbnail(
+                            target.user.displayAvatarURL({
+                                size: 256
                             })
-                            .setTimestamp();
-
-                    const button =
-                        new ButtonBuilder()
-                            .setCustomId(
-                                `open_ticket_${panelId}`
-                            )
-                            .setLabel(
-                                buttonText
-                            )
-                            .setEmoji("🎫")
-                            .setStyle(
-                                ButtonStyle.Primary
-                            );
-
-                    const row =
-                        new ActionRowBuilder()
-                            .addComponents(
-                                button
-                            );
-
-                    await interaction.reply({
-                        content:
-                            "✅ تم إنشاء لوحة التذاكر وإرسالها.",
-                        ephemeral: true
-                    });
-
-                    await interaction.channel.send({
-                        embeds: [
-                            panelEmbed
-                        ],
-                        components: [
-                            row
-                        ]
-                    });
-
-                    return;
-                }
-
-
-                // =============================================
-                // /setup
-                // =============================================
-
-                if (
-                    command === "setup"
-                ) {
-
-                    if (
-                        !requireStaff(
-                            interaction,
-                            3
                         )
-                    ) {
+                        .addFields(
 
-                        await interaction.reply({
-                            content:
-                                "❌ أمر الإعداد متاح للإدارة العليا والأونر فقط.",
-                            ephemeral: true
-                        });
+                            {
+                                name:
+                                    "🏆 نقاط الإجراءات",
+                                value:
+                                    `${user.actionPoints || 0}`,
+                                inline: true
+                            },
 
-                        return;
-                    }
+                            {
+                                name:
+                                    "⚠️ التحذيرات",
+                                value:
+                                    `${user.warnings || 0}`,
+                                inline: true
+                            },
 
-                    const guildData =
-                        getGuildData(
-                            interaction.guild.id
+                            {
+                                name:
+                                    "⏱️ التايم أوت",
+                                value:
+                                    `${user.timeouts || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "🔒 السجن",
+                                value:
+                                    `${user.jails || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "🎫 التذاكر المستلمة",
+                                value:
+                                    `${user.ticketsClaimed || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "⭐ التقييمات الجيدة",
+                                value:
+                                    `${user.goodRatings || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "📈 XP",
+                                value:
+                                    `${user.xp || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "💰 الرصيد",
+                                value:
+                                    `${user.coins || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "📊 إجمالي النقاط",
+                                value:
+                                    `${stats.points || user.actionPoints || 0}`,
+                                inline: true
+                            }
+                        )
+                        .setTimestamp();
+
+                return interaction.reply({
+                    embeds: [embed],
+                    ephemeral: true
+                });
+            }
+
+
+            // ==============================================
+            // XP
+            // ==============================================
+
+            if (
+                command ===
+                "xp"
+            ) {
+
+                let target =
+                    interaction.member;
+
+                const selectedUser =
+                    interaction.options.getUser(
+                        "member"
+                    );
+
+                if (selectedUser) {
+
+                    target =
+                        await guild.members.fetch(
+                            selectedUser.id
+                        ).catch(
+                            () => null
                         );
 
-                    guildData.setupCompleted =
-                        true;
+                    if (!target) {
 
-                    saveData();
-
-                    await interaction.reply({
-                        content:
-                            "✅ تم تفعيل إعداد البوت لهذا السيرفر.\n\n" +
-                            "يمكنك الآن استخدام أنظمة البوت وإعداد التذاكر والأدوار.",
-                        ephemeral: true
-                    });
-
-                    return;
+                        return interaction.reply({
+                            content:
+                                "❌ لم أتمكن من العثور على العضو.",
+                            ephemeral: true
+                        });
+                    }
                 }
 
+                const user =
+                    getUserData(
+                        guild.id,
+                        target.id
+                    );
+
+                return interaction.reply({
+                    content:
+                        `📈 XP الخاص بـ ${target}: **${user.xp || 0}**`,
+                    ephemeral: true
+                });
+            }
+
+
+            // ==============================================
+            // BALANCE
+            // ==============================================
+
+            if (
+                command ===
+                "balance"
+            ) {
+
+                let target =
+                    interaction.member;
+
+                const selectedUser =
+                    interaction.options.getUser(
+                        "member"
+                    );
+
+                if (selectedUser) {
+
+                    target =
+                        await guild.members.fetch(
+                            selectedUser.id
+                        ).catch(
+                            () => null
+                        );
+
+                    if (!target) {
+
+                        return interaction.reply({
+                            content:
+                                "❌ لم أتمكن من العثور على العضو.",
+                            ephemeral: true
+                        });
+                    }
+                }
+
+                const user =
+                    getUserData(
+                        guild.id,
+                        target.id
+                    );
+
+                const embed =
+                    new EmbedBuilder()
+                        .setColor(0x2ECC71)
+                        .setTitle(
+                            "💰 الرصيد"
+                        )
+                        .setDescription(
+                            `${target}\n\nالرصيد: **${user.coins || 0} ${guildData.currencyName || "Coins"}**`
+                        )
+                        .setTimestamp();
+
+                return interaction.reply({
+                    embeds: [embed],
+                    ephemeral: true
+                });
+            }
+
+
+            // ==============================================
+            // PAY
+            // ==============================================
+
+            if (
+                command ===
+                "pay"
+            ) {
+
+                const target =
+                    await resolveInteractionMember(
+                        interaction,
+                        "member"
+                    );
+
+                const amount =
+                    interaction.options.getInteger(
+                        "amount"
+                    );
+
+                if (!target) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ العضو غير موجود.",
+                        ephemeral: true
+                    });
+                }
+
+                if (
+                    target.id ===
+                    interaction.user.id
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ لا يمكنك تحويل الأموال لنفسك.",
+                        ephemeral: true
+                    });
+                }
+
+                if (
+                    !Number.isInteger(amount) ||
+                    amount <= 0
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ المبلغ غير صحيح.",
+                        ephemeral: true
+                    });
+                }
+
+                const sender =
+                    getUserData(
+                        guild.id,
+                        interaction.user.id
+                    );
+
+                const receiver =
+                    getUserData(
+                        guild.id,
+                        target.id
+                    );
+
+                if (
+                    (sender.coins || 0) <
+                    amount
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ رصيدك غير كافي.",
+                        ephemeral: true
+                    });
+                }
+
+                sender.coins =
+                    (sender.coins || 0) -
+                    amount;
+
+                receiver.coins =
+                    (receiver.coins || 0) +
+                    amount;
+
+                saveData();
+
+                return interaction.reply({
+                    content:
+                        `💸 تم تحويل **${amount} ${guildData.currencyName || "Coins"}** إلى ${target}.`
+                });
+            }
+
+
+            // ==============================================
+            // ADD COINS
+            // ==============================================
+
+            if (
+                command ===
+                "addcoins"
+            ) {
+
+                if (
+                    !requireStaff(
+                        interaction
+                    )
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ هذا الأمر متاح للإدارة فقط.",
+                        ephemeral: true
+                    });
+                }
+
+                const target =
+                    await resolveInteractionMember(
+                        interaction,
+                        "member"
+                    );
+
+                const amount =
+                    interaction.options.getInteger(
+                        "amount"
+                    );
+
+                if (!target) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ العضو غير موجود.",
+                        ephemeral: true
+                    });
+                }
+
+                const user =
+                    getUserData(
+                        guild.id,
+                        target.id
+                    );
+
+                user.coins =
+                    (user.coins || 0) +
+                    amount;
+
+                saveData();
+
+                return interaction.reply({
+                    content:
+                        `✅ تمت إضافة **${amount}** ${guildData.currencyName || "Coins"} إلى ${target}.`
+                });
+            }
+
+
+            // ==============================================
+            // REMOVE COINS
+            // ==============================================
+
+            if (
+                command ===
+                "removecoins"
+            ) {
+
+                if (
+                    !requireStaff(
+                        interaction
+                    )
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ هذا الأمر متاح للإدارة فقط.",
+                        ephemeral: true
+                    });
+                }
+
+                const target =
+                    await resolveInteractionMember(
+                        interaction,
+                        "member"
+                    );
+
+                const amount =
+                    interaction.options.getInteger(
+                        "amount"
+                    );
+
+                if (!target) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ العضو غير موجود.",
+                            ephemeral: true
+                        });
+                }
+
+                const user =
+                    getUserData(
+                        guild.id,
+                        target.id
+                    );
+
+                if (
+                    (user.coins || 0) <
+                    amount
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ رصيد العضو غير كافي.",
+                        ephemeral: true
+                    });
+                }
+
+                user.coins =
+                    (user.coins || 0) -
+                    amount;
+
+                saveData();
+
+                return interaction.reply({
+                    content:
+                        `✅ تم خصم **${amount}** ${guildData.currencyName || "Coins"} من ${target}.`
+                });
+            }
+
+
+            // ==============================================
+            // SET COINS
+            // ==============================================
+
+            if (
+                command ===
+                "setcoins"
+            ) {
+
+                if (
+                    !requireStaff(
+                        interaction
+                    )
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ هذا الأمر متاح للإدارة فقط.",
+                        ephemeral: true
+                    });
+                }
+
+                const target =
+                    await resolveInteractionMember(
+                        interaction,
+                        "member"
+                    );
+
+                const amount =
+                    interaction.options.getInteger(
+                        "amount"
+                    );
+
+                if (!target) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ العضو غير موجود.",
+                        ephemeral: true
+                    });
+                }
+
+                const user =
+                    getUserData(
+                        guild.id,
+                        target.id
+                    );
+
+                user.coins =
+                    amount;
+
+                saveData();
+
+                return interaction.reply({
+                    content:
+                        `✅ تم تعيين رصيد ${target} إلى **${amount} ${guildData.currencyName || "Coins"}**.`
+                });
+            }
+
+
+            // ==============================================
+            // STATS
+            // ==============================================
+
+            if (
+                command ===
+                "stats"
+            ) {
+
+                let target =
+                    interaction.member;
+
+                const selectedUser =
+                    interaction.options.getUser(
+                        "member"
+                    );
+
+                if (selectedUser) {
+
+                    target =
+                        await guild.members.fetch(
+                            selectedUser.id
+                        ).catch(
+                            () => null
+                        );
+
+                    if (!target) {
+
+                        return interaction.reply({
+                            content:
+                                "❌ لم أتمكن من العثور على العضو.",
+                            ephemeral: true
+                        });
+                    }
+                }
+
+                const user =
+                    getUserData(
+                        guild.id,
+                        target.id
+                    );
+
+                const stats =
+                    getStats(
+                        guild.id,
+                        target.id
+                    );
+
+                const embed =
+                    new EmbedBuilder()
+                        .setColor(0x3498DB)
+                        .setTitle(
+                            `📊 إحصائيات ${target.displayName}`
+                        )
+                        .setThumbnail(
+                            target.user.displayAvatarURL({
+                                size: 256
+                            })
+                        )
+                        .addFields(
+
+                            {
+                                name:
+                                    "⚠️ التحذيرات",
+                                value:
+                                    `${user.warnings || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "⏱️ التايم أوت",
+                                value:
+                                    `${user.timeouts || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "🔒 السجن",
+                                value:
+                                    `${user.jails || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "🔨 الحظر",
+                                value:
+                                    `${user.bans || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "🎫 التذاكر المستلمة",
+                                value:
+                                    `${user.ticketsClaimed || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "🎫 التذاكر المغلقة",
+                                value:
+                                    `${user.ticketsClosed || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "⭐ التقييمات الجيدة",
+                                value:
+                                    `${user.goodRatings || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "🏆 النقاط",
+                                value:
+                                    `${user.actionPoints || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "📈 XP",
+                                value:
+                                    `${user.xp || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "💬 الرسائل",
+                                value:
+                                    `${user.messages || 0}`,
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "💰 الرصيد",
+                                value:
+                                    `${user.coins || 0}`,
+                                inline: true
+                            }
+                        )
+                        .setTimestamp();
+
+                return interaction.reply({
+                    embeds: [embed],
+                    ephemeral: true
+                });
+            }
+
+
+            // ==============================================
+            // BAN
+            // ==============================================
+
+            if (
+                command ===
+                "ban"
+            ) {
+
+                if (
+                    !requireStaff(
+                        interaction
+                    )
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ ليس لديك صلاحية استخدام هذا الأمر.",
+                        ephemeral: true
+                    });
+                }
+
+                const target =
+                    await resolveInteractionMember(
+                        interaction,
+                        "member"
+                    );
+
+                if (!target) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ العضو غير موجود.",
+                        ephemeral: true
+                    });
+                }
+
+                if (
+                    !canModerateInteractionTarget(
+                        interaction,
+                        target,
+                        guildData
+                    )
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ لا يمكنك حظر هذا العضو بسبب مستوى الإدارة.",
+                        ephemeral: true
+                    });
+                }
+
+                const reason =
+                    interaction.options.getString(
+                        "reason"
+                    ) ||
+                    "لم يتم تحديد سبب.";
+
+                try {
+
+                    await executeBan(
+                        guild,
+                        target,
+                        interaction.member,
+                        reason
+                    );
+
+                    return interaction.reply({
+                        content:
+                            `🔨 تم حظر ${target}.`
+                    });
+
+                } catch (error) {
+
+                    return interaction.reply({
+                        content:
+                            `❌ ${error.message}`,
+                        ephemeral: true
+                    });
+                }
+            }
+
+
+            // ==============================================
+            // UNBAN
+            // ==============================================
+
+            if (
+                command ===
+                "unban"
+            ) {
+
+                if (
+                    !requireStaff(
+                        interaction
+                    )
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ ليس لديك صلاحية استخدام هذا الأمر.",
+                        ephemeral: true
+                    });
+                }
+
+                const userId =
+                    interaction.options.getString(
+                        "userid"
+                    );
+
+                const reason =
+                    interaction.options.getString(
+                        "reason"
+                    ) ||
+                    "لم يتم تحديد سبب.";
+
+                if (
+                    !/^\d{17,20}$/.test(
+                        userId
+                    )
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ ID العضو غير صحيح.",
+                        ephemeral: true
+                    });
+                }
+
+                try {
+
+                    await guild.bans.remove(
+                        userId,
+                        reason
+                    );
+
+                    await sendLog(
+                        guild,
+                        "🔓 Unban",
+                        `تم فك حظر <@${userId}> بواسطة ${interaction.user}\n**السبب:** ${reason}`,
+                        0x2ECC71
+                    );
+
+                    return interaction.reply({
+                        content:
+                            `✅ تم فك حظر <@${userId}>.`
+                    });
+
+                } catch (error) {
+
+                    return interaction.reply({
+                        content:
+                            `❌ ${error.message}`,
+                        ephemeral: true
+                    });
+                }
+            }
+
+
+            // ==============================================
+            // WARN / WARNING
+            // ==============================================
+
+            if (
+                [
+                    "warn",
+                    "warning"
+                ].includes(command)
+            ) {
+
+                if (
+                    !requireStaff(
+                        interaction
+                    )
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ ليس لديك صلاحية استخدام هذا الأمر.",
+                        ephemeral: true
+                    });
+                }
+
+                const target =
+                    await resolveInteractionMember(
+                        interaction,
+                        "member"
+                    );
+
+                const durationInput =
+                    interaction.options.getString(
+                        "duration"
+                    );
+
+                const reason =
+                    interaction.options.getString(
+                        "reason"
+                    ) ||
+                    "لم يتم تحديد سبب.";
+
+                if (!target) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ العضو غير موجود.",
+                        ephemeral: true
+                    });
+                }
+
+                if (
+                    !canModerateInteractionTarget(
+                        interaction,
+                        target,
+                        guildData
+                    )
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ لا يمكنك تحذير هذا العضو بسبب مستوى الإدارة.",
+                        ephemeral: true
+                    });
+                }
+
+                try {
+
+                    await executeWarn(
+                        guild,
+                        target,
+                        interaction.member,
+                        reason,
+                        durationInput
+                    );
+
+                    return interaction.reply({
+                        content:
+                            `⚠️ تم تحذير ${target} لمدة **${durationInput}**.\n**السبب:** ${reason}`
+                    });
+
+                } catch (error) {
+
+                    return interaction.reply({
+                        content:
+                            `❌ ${error.message}`,
+                        ephemeral: true
+                    });
+                }
+            }
+
+
+            // ==============================================
+            // TIMEOUT
+            // ==============================================
+
+            if (
+                command ===
+                "timeout"
+            ) {
+
+                if (
+                    !requireStaff(
+                        interaction
+                    )
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ ليس لديك صلاحية استخدام هذا الأمر.",
+                        ephemeral: true
+                    });
+                }
+
+                const target =
+                    await resolveInteractionMember(
+                        interaction,
+                        "member"
+                    );
+
+                const durationInput =
+                    interaction.options.getString(
+                        "duration"
+                    );
+
+                const reason =
+                    interaction.options.getString(
+                        "reason"
+                    ) ||
+                    "لم يتم تحديد سبب.";
+
+                if (!target) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ العضو غير موجود.",
+                        ephemeral: true
+                    });
+                }
+
+                if (
+                    !canModerateInteractionTarget(
+                        interaction,
+                        target,
+                        guildData
+                    )
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ لا يمكنك إعطاء تايم أوت لهذا العضو.",
+                        ephemeral: true
+                    });
+                }
+
+                try {
+
+                    await executeTimeout(
+                        guild,
+                        target,
+                        interaction.member,
+                        reason,
+                        durationInput
+                    );
+
+                    return interaction.reply({
+                        content:
+                            `⏱️ تم إعطاء ${target} تايم أوت لمدة **${durationInput}**.\n**السبب:** ${reason}`
+                    });
+
+                } catch (error) {
+
+                    return interaction.reply({
+                        content:
+                            `❌ ${error.message}`,
+                        ephemeral: true
+                    });
+                }
+            }
+
+
+            // ==============================================
+            // JAIL
+            // ==============================================
+
+            if (
+                command ===
+                "jail"
+            ) {
+
+                const level =
+                    getStaffLevel(
+                        interaction.member,
+                        guildData
+                    );
+
+                if (
+                    level < 3
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ السجن متاح فقط للإدارة العليا والأونر.",
+                        ephemeral: true
+                    });
+                }
+
+                const target =
+                    await resolveInteractionMember(
+                        interaction,
+                        "member"
+                    );
+
+                const durationInput =
+                    interaction.options.getString(
+                        "duration"
+                    );
+
+                const reason =
+                    interaction.options.getString(
+                        "reason"
+                    ) ||
+                    "لم يتم تحديد سبب.";
+
+                if (!target) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ العضو غير موجود.",
+                        ephemeral: true
+                    });
+                }
+
+                if (
+                    !canModerateInteractionTarget(
+                        interaction,
+                        target,
+                        guildData
+                    )
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ لا يمكنك سجن هذا العضو بسبب مستوى الإدارة.",
+                        ephemeral: true
+                    });
+                }
+
+                try {
+
+                    await executeJail(
+                        guild,
+                        target,
+                        interaction.member,
+                        reason,
+                        durationInput
+                    );
+
+                    return interaction.reply({
+                        content:
+                            `🔒 تم سجن ${target} لمدة **${durationInput}**.\n**السبب:** ${reason}`
+                    });
+
+                } catch (error) {
+
+                    return interaction.reply({
+                        content:
+                            `❌ ${error.message}`,
+                        ephemeral: true
+                    });
+                }
+            }
+
+
+            // ==============================================
+            // TIME / JAIL STATUS
+            // ==============================================
+
+            if (
+                command ===
+                "time"
+            ) {
+
+                let target =
+                    interaction.member;
+
+                const selectedUser =
+                    interaction.options.getUser(
+                        "member"
+                    );
+
+                if (selectedUser) {
+
+                    target =
+                        await guild.members.fetch(
+                            selectedUser.id
+                        ).catch(
+                            () => null
+                        );
+
+                    if (!target) {
+
+                        return interaction.reply({
+                            content:
+                                "❌ لم أتمكن من العثور على العضو.",
+                            ephemeral: true
+                        });
+                    }
+                }
+
+                const jail =
+                    getActiveJail(
+                        guild.id,
+                        target.id
+                    );
+
+                if (!jail) {
+
+                    return interaction.reply({
+                        content:
+                            `ℹ️ ${target} ليس مسجونًا حاليًا.`,
+                        ephemeral: true
+                    });
+                }
+
+                const remaining =
+                    Math.max(
+                        0,
+                        jail.expiresAt -
+                        Date.now()
+                    );
+
+                return interaction.reply({
+                    content:
+                        `🔒 ${target} مسجون.\n⏳ المتبقي: **${formatDuration(remaining)}**`,
+                    ephemeral: true
+                });
+            }
+
+
+            // ==============================================
+            // CLOSE TICKET
+            // ==============================================
+
+            if (
+                command ===
+                "close"
+            ) {
+
+                if (
+                    !interaction.channel
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ هذه القناة غير صالحة.",
+                        ephemeral: true
+                    });
+                }
+
+                try {
+
+                    await closeTicket(
+                        interaction.channel,
+                        interaction.member
+                    );
+
+                } catch (error) {
+
+                    return interaction.reply({
+                        content:
+                            `❌ ${error.message}`,
+                        ephemeral: true
+                    });
+                }
+
+                return;
+            }
+
+
+            // ==============================================
+            // DELETE TICKET
+            // ==============================================
+
+            if (
+                command ===
+                "delete"
+            ) {
+
+                if (
+                    !interaction.channel
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ هذه القناة غير صالحة.",
+                        ephemeral: true
+                    });
+                }
+
+                try {
+
+                    await deleteTicket(
+                        interaction.channel,
+                        interaction.member
+                    );
+
+                } catch (error) {
+
+                    return interaction.reply({
+                        content:
+                            `❌ ${error.message}`,
+                        ephemeral: true
+                    });
+                }
+
+                return;
+            }
+
+
+            // ==============================================
+            // SETUP TICKET PANEL
+            // ==============================================
+
+            if (
+                command ===
+                "setup-ticket-panel"
+            ) {
+
+                const level =
+                    getStaffLevel(
+                        interaction.member,
+                        guildData
+                    );
+
+                if (
+                    level < 3
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ إنشاء بانلات التذاكر متاح للإدارة العليا والأونر فقط.",
+                        ephemeral: true
+                    });
+                }
+
+                const name =
+                    interaction.options.getString(
+                        "name"
+                    );
+
+                const description =
+                    interaction.options.getString(
+                        "description"
+                    ) ||
+                    "اضغط على الزر لفتح تذكرة.";
+
+                const buttonName =
+                    interaction.options.getString(
+                        "button"
+                    ) ||
+                    "فتح تذكرة";
+
+                const category =
+                    interaction.options.getChannel(
+                        "category"
+                    );
+
+                if (!category) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ يجب تحديد كاتيجوري التذاكر.",
+                        ephemeral: true
+                    });
+                }
+
+                guildData.ticketCategoryId =
+                    category.id;
+
+                guildData.setupCompleted =
+                    true;
+
+                const panels =
+                    getGuildTicketPanels(
+                        guild.id
+                    );
+
+                const panelId =
+                    `${Date.now()}_${Math.random()
+                        .toString(36)
+                        .slice(2, 7)}`;
+
+                panels[panelId] = {
+
+                    id: panelId,
+
+                    name,
+
+                    description,
+
+                    buttonName,
+
+                    categoryId:
+                        category.id,
+
+                    channelId:
+                        interaction.channel.id,
+
+                    createdBy:
+                        interaction.user.id,
+
+                    createdAt:
+                        Date.now()
+                };
+
+                saveData();
+
+                const embed =
+                    new EmbedBuilder()
+                        .setColor(0x5865F2)
+                        .setTitle(
+                            `🎫 ${name}`
+                        )
+                        .setDescription(
+                            description
+                        )
+                        .setFooter({
+                            text:
+                                "اضغط على الزر أسفل الرسالة لفتح تذكرة."
+                        })
+                        .setTimestamp();
+
+                const row =
+                    new ActionRowBuilder()
+                        .addComponents(
+
+                            new ButtonBuilder()
+                                .setCustomId(
+                                    `open_ticket_${panelId}`
+                                )
+                                .setLabel(
+                                    buttonName
+                                )
+                                .setEmoji("🎫")
+                                .setStyle(
+                                    ButtonStyle.Primary
+                                )
+                        );
+
+                await interaction.reply({
+                    content:
+                        "✅ تم إنشاء بانل التذاكر.",
+                    ephemeral: true
+                });
+
+                await interaction.channel.send({
+                    embeds: [embed],
+                    components: [row]
+                });
+
+                return;
+            }
+
+
+            // ==============================================
+            // SETUP
+            // ==============================================
+
+            if (
+                command ===
+                "setup"
+            ) {
+
+                const level =
+                    getStaffLevel(
+                        interaction.member,
+                        guildData
+                    );
+
+                if (
+                    level < 3
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ إعدادات البوت متاحة للإدارة العليا والأونر فقط.",
+                        ephemeral: true
+                    });
+                }
+
+                const embed =
+                    new EmbedBuilder()
+                        .setColor(0x5865F2)
+                        .setTitle(
+                            "⚙️ إعدادات البوت"
+                        )
+                        .addFields(
+
+                            {
+                                name:
+                                    "🎫 Ticket Category",
+                                value:
+                                    guildData.ticketCategoryId
+                                        ? `<#${guildData.ticketCategoryId}>`
+                                        : "❌ غير محددة",
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "🔒 Jail Role",
+                                value:
+                                    guildData.jailRoleId
+                                        ? `<@&${guildData.jailRoleId}>`
+                                        : "❌ غير محددة",
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "📋 Logs",
+                                value:
+                                    guildData.logsChannelId
+                                        ? `<#${guildData.logsChannelId}>`
+                                        : "❌ غير محددة",
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "👋 Welcome",
+                                value:
+                                    guildData.welcomeEnabled
+                                        ? "✅ مفعل"
+                                        : "❌ غير مفعل",
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "👋 Goodbye",
+                                value:
+                                    guildData.goodbyeEnabled
+                                        ? "✅ مفعل"
+                                        : "❌ غير مفعل",
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "🚨 Anti-Spam",
+                                value:
+                                    guildData.antiSpam?.enabled
+                                        ? "✅ مفعل"
+                                        : "❌ غير مفعل",
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    "💰 Currency",
+                                value:
+                                    guildData.currencyEnabled
+                                        ? `✅ ${guildData.currencyName || "Coins"}`
+                                        : "❌ غير مفعلة",
+                                inline: true
+                            }
+                        )
+                        .setFooter({
+                            text:
+                                "استخدام إعدادات إضافية سيتم من خلال أوامر الإعداد."
+                        })
+                        .setTimestamp();
+
+                return interaction.reply({
+                    embeds: [embed],
+                    ephemeral: true
+                });
             }
 
         } catch (error) {
 
             console.error(
-                "❌ Interaction Error:",
+                "Slash Interaction Error:",
                 error
             );
 
@@ -3251,233 +3860,427 @@ client.on(
                 interaction.deferred
             ) {
 
-                try {
-
-                    await interaction.followUp({
-                        content:
-                            "❌ حدث خطأ غير متوقع أثناء تنفيذ الأمر.",
-                        ephemeral: true
-                    });
-
-                } catch {}
+                await interaction.followUp({
+                    content:
+                        "❌ حدث خطأ أثناء تنفيذ الأمر.",
+                    ephemeral: true
+                }).catch(() => {});
 
             } else {
 
-                try {
-
-                    await interaction.reply({
-                        content:
-                            "❌ حدث خطأ غير متوقع أثناء تنفيذ الأمر.",
-                        ephemeral: true
-                    });
-
-                } catch {}
-
+                await interaction.reply({
+                    content:
+                        "❌ حدث خطأ أثناء تنفيذ الأمر.",
+                    ephemeral: true
+                }).catch(() => {});
             }
-
         }
-
     }
 );
 
 
-// ============================================================
-// END OF PART 2
-// ============================================================
-// ============================================================
-// PART 3 — MODERATION + TICKETS
-// ============================================================
+// ==================================================
+// END PART 2
+// ==================================================
+// ==================================================
+// PART 3 - MODERATION / JAIL / TICKETS / RATINGS
+// ==================================================
 
 
-// ============================================================
-// MODERATION — BAN
-// ============================================================
+// ==================================================
+// BAN
+// ==================================================
 
 async function executeBan(
     guild,
     target,
     moderator,
-    reason = "بدون سبب"
+    reason = "لم يتم تحديد سبب."
 ) {
+
+    if (!guild) {
+        throw new Error(
+            "السيرفر غير موجود."
+        );
+    }
+
+    if (!target) {
+        throw new Error(
+            "العضو غير موجود."
+        );
+    }
+
+    if (!target.bannable) {
+        throw new Error(
+            "البوت لا يستطيع حظر هذا العضو. تأكد من صلاحيات البوت وترتيب الرتب."
+        );
+    }
 
     try {
 
-        if (!target) {
-            return {
-                success: false,
-                message: "❌ العضو غير موجود."
-            };
-        }
-
-        if (!target.bannable) {
-            return {
-                success: false,
-                message:
-                    "❌ لا أستطيع حظر هذا العضو. تأكد أن رتبة البوت أعلى منه."
-            };
-        }
-
         await target.ban({
             reason:
-                `${reason} | بواسطة ${moderator.user.tag}`
+                reason
         });
 
         const user =
             getUserData(
                 guild.id,
-                target.id
+                moderator.id
             );
-
-        user.bans =
-            Number(user.bans || 0) + 1;
 
         const stats =
             getStats(
                 guild.id,
-                target.id
+                moderator.id
             );
 
+        user.bans =
+            (user.bans || 0) + 1;
+
         stats.bans =
-            Number(stats.bans || 0) + 1;
+            (stats.bans || 0) + 1;
 
         saveData();
 
         await sendLog(
             guild,
-            "🔨 عضو تم حظره",
-            [
-                `👤 العضو: ${target}`,
-                `🛡️ بواسطة: ${moderator}`,
-                `📝 السبب: ${reason}`
-            ].join("\n"),
-            0xED4245
+            "🔨 Ban",
+            `**العضو:** ${target.user.tag}\n**بواسطة:** ${moderator}\n**السبب:** ${reason}`,
+            0xE74C3C
         );
 
-        return {
-            success: true,
-            message:
-                `🔨 تم حظر ${target} بنجاح.\n📝 السبب: **${reason}**`
-        };
+        try {
+
+            await target.send({
+                embeds: [
+
+                    new EmbedBuilder()
+                        .setColor(0xE74C3C)
+                        .setTitle(
+                            "🔨 تم حظرك"
+                        )
+                        .setDescription(
+                            `تم حظرك من **${guild.name}**.`
+                        )
+                        .addFields({
+
+                            name:
+                                "السبب",
+
+                            value:
+                                reason
+                        })
+                        .setTimestamp()
+                ]
+            });
+
+        } catch {}
 
     } catch (error) {
 
-        console.error(
-            "executeBan:",
-            error
+        throw new Error(
+            `فشل حظر العضو: ${error.message}`
         );
-
-        return {
-            success: false,
-            message:
-                "❌ حدث خطأ أثناء تنفيذ الباند."
-        };
     }
 }
 
 
-// ============================================================
-// MODERATION — WARN
-// ============================================================
+// ==================================================
+// WARN
+// ==================================================
 
 async function executeWarn(
     guild,
     target,
     moderator,
-    reason,
+    reason = "لم يتم تحديد سبب.",
     durationInput
 ) {
 
-    try {
+    if (!guild) {
+        throw new Error(
+            "السيرفر غير موجود."
+        );
+    }
 
-        if (!target) {
-            return {
-                success: false,
-                message: "❌ العضو غير موجود."
-            };
-        }
+    if (!target) {
+        throw new Error(
+            "العضو غير موجود."
+        );
+    }
 
-        const duration =
-            parseDuration(
-                durationInput
-            );
+    const duration =
+        parseDuration(
+            durationInput
+        );
 
-        if (!duration) {
-            return {
-                success: false,
-                message:
-                    "❌ مدة التحذير غير صحيحة.\nمثال: `10m` أو `1h` أو `1d`"
-            };
-        }
+    if (!duration) {
+        throw new Error(
+            "مدة التحذير غير صحيحة. مثال: 30m أو 1h أو 1d."
+        );
+    }
 
-        const now =
-            Date.now();
+    const warnings =
+        getUserWarnings(
+            guild.id,
+            target.id
+        );
 
-        const guildWarnings =
-            getGuildWarnings(
-                guild.id
-            );
+    const now =
+        Date.now();
+
+    // تنظيف التحذيرات القديمة
+    for (
+        let i = warnings.length - 1;
+        i >= 0;
+        i--
+    ) {
 
         if (
-            !guildWarnings[target.id]
+            warnings[i].expiresAt <= now
         ) {
 
-            guildWarnings[target.id] =
-                [];
+            warnings.splice(
+                i,
+                1
+            );
         }
+    }
 
-        const activeBefore =
-            guildWarnings[target.id]
-                .filter(
-                    warning =>
-                        warning.expiresAt >
-                        now
-                )
-                .length;
+    const warning = {
 
-        const warning = {
+        id:
+            `${Date.now()}_${Math.random()
+                .toString(36)
+                .slice(2, 8)}`,
 
-            id:
-                `warn_${Date.now()}_${Math.random()
-                    .toString(36)
-                    .slice(2, 8)}`,
+        userId:
+            target.id,
 
-            userId:
-                target.id,
+        moderatorId:
+            moderator.id,
 
-            moderatorId:
-                moderator.id,
+        reason:
+            reason,
 
-            reason:
-                reason || "بدون سبب",
+        createdAt:
+            now,
 
-            duration:
-                duration,
+        expiresAt:
+            now +
+            duration.milliseconds
+    };
 
-            createdAt:
-                now,
+    warnings.push(
+        warning
+    );
 
-            expiresAt:
-                now + duration
 
-        };
+    // ----------------------------------------------
+    // POINTS
+    // ----------------------------------------------
 
-        guildWarnings[target.id]
-            .push(warning);
+    const user =
+        getUserData(
+            guild.id,
+            moderator.id
+        );
+
+    const stats =
+        getStats(
+            guild.id,
+            moderator.id
+        );
+
+    user.warnings =
+        (user.warnings || 0) + 1;
+
+    stats.warnings =
+        (stats.warnings || 0) + 1;
+
+    addPoints(
+        guild.id,
+        moderator.id,
+        POINTS.warning
+    );
+
+
+    saveData();
+
+
+    // ----------------------------------------------
+    // THREE ACTIVE WARNINGS
+    // ----------------------------------------------
+
+    if (
+        warnings.length >= 3
+    ) {
+
+        try {
+
+            if (
+                target.moderatable
+            ) {
+
+                const timeoutDuration =
+                    30 * 60 * 1000;
+
+                await target.timeout(
+                    timeoutDuration,
+                    "الوصول إلى 3 تحذيرات فعالة."
+                );
+
+                await sendLog(
+                    guild,
+                    "🚨 3 Warnings",
+                    `العضو ${target} وصل إلى 3 تحذيرات فعالة وتم إعطاؤه تايم أوت 30 دقيقة.`,
+                    0xE67E22
+                );
+            }
+
+        } catch (error) {
+
+            console.error(
+                "Three Warnings Timeout Error:",
+                error
+            );
+        }
+    }
+
+
+    // ----------------------------------------------
+    // LOG
+    // ----------------------------------------------
+
+    await sendLog(
+        guild,
+        "⚠️ Warning",
+        `**العضو:** ${target.user.tag}\n**بواسطة:** ${moderator}\n**المدة:** ${durationInput}\n**السبب:** ${reason}`,
+        0xF1C40F
+    );
+
+
+    // ----------------------------------------------
+    // DM
+    // ----------------------------------------------
+
+    try {
+
+        await target.send({
+            embeds: [
+
+                new EmbedBuilder()
+                    .setColor(0xF1C40F)
+                    .setTitle(
+                        "⚠️ تم تحذيرك"
+                    )
+                    .setDescription(
+                        `تم تحذيرك في **${guild.name}**.`
+                    )
+                    .addFields(
+
+                        {
+                            name:
+                                "المدة",
+
+                            value:
+                                durationInput,
+
+                            inline:
+                                true
+                        },
+
+                        {
+                            name:
+                                "السبب",
+
+                            value:
+                                reason,
+
+                            inline:
+                                true
+                        }
+                    )
+                    .setTimestamp()
+            ]
+        });
+
+    } catch {}
+
+    return warning;
+}
+
+
+// ==================================================
+// TIMEOUT
+// ==================================================
+
+async function executeTimeout(
+    guild,
+    target,
+    moderator,
+    reason = "لم يتم تحديد سبب.",
+    durationInput
+) {
+
+    if (!guild) {
+        throw new Error(
+            "السيرفر غير موجود."
+        );
+    }
+
+    if (!target) {
+        throw new Error(
+            "العضو غير موجود."
+        );
+    }
+
+    const duration =
+        parseDuration(
+            durationInput
+        );
+
+    if (!duration) {
+        throw new Error(
+            "مدة التايم أوت غير صحيحة."
+        );
+    }
+
+    const maxTimeout =
+        28 * 24 * 60 * 60 * 1000;
+
+    if (
+        duration.milliseconds >
+        maxTimeout
+    ) {
+
+        throw new Error(
+            "أقصى مدة للتايم أوت هي 28 يوم."
+        );
+    }
+
+    if (
+        !target.moderatable
+    ) {
+
+        throw new Error(
+            "البوت لا يستطيع إعطاء تايم أوت لهذا العضو."
+        );
+    }
+
+    try {
+
+        await target.timeout(
+            duration.milliseconds,
+            reason
+        );
 
         const user =
             getUserData(
                 guild.id,
                 moderator.id
             );
-
-        user.warnings =
-            Number(user.warnings || 0) + 1;
-
-        addPoints(
-            guild.id,
-            moderator.id,
-            POINTS.warning
-        );
 
         const stats =
             getStats(
@@ -3485,202 +4288,11 @@ async function executeWarn(
                 moderator.id
             );
 
-        stats.warnings =
-            Number(stats.warnings || 0) + 1;
-
-        saveData();
-
-        // ----------------------------------------------------
-        // 3 WARNS = 30 MIN TIMEOUT
-        // ----------------------------------------------------
-
-        const activeAfter =
-            guildWarnings[target.id]
-                .filter(
-                    item =>
-                        item.expiresAt >
-                        now
-                )
-                .length;
-
-        let autoTimeout = false;
-
-        if (
-            activeBefore < 3 &&
-            activeAfter >= 3 &&
-            target.moderatable
-        ) {
-
-            try {
-
-                await target.timeout(
-                    30 * 60 * 1000,
-                    "وصل العضو إلى 3 تحذيرات"
-                );
-
-                autoTimeout = true;
-
-                const targetData =
-                    getUserData(
-                        guild.id,
-                        target.id
-                    );
-
-                targetData.timeouts =
-                    Number(
-                        targetData.timeouts || 0
-                    ) + 1;
-
-                const targetStats =
-                    getStats(
-                        guild.id,
-                        target.id
-                    );
-
-                targetStats.timeouts =
-                    Number(
-                        targetStats.timeouts || 0
-                    ) + 1;
-
-                saveData();
-
-            } catch (error) {
-
-                console.error(
-                    "Auto timeout:",
-                    error
-                );
-            }
-        }
-
-        await sendLog(
-            guild,
-            "⚠️ تحذير جديد",
-            [
-                `👤 العضو: ${target}`,
-                `🛡️ بواسطة: ${moderator}`,
-                `📝 السبب: ${reason}`,
-                `⏳ المدة: ${formatDuration(duration)}`,
-                `📊 التحذيرات الحالية: ${activeAfter}`
-            ].join("\n"),
-            0xFEE75C
-        );
-
-        let message =
-            `⚠️ تم تحذير ${target} بنجاح.\n` +
-            `📝 السبب: **${reason}**\n` +
-            `⏳ المدة: **${formatDuration(duration)}**\n` +
-            `📊 التحذيرات الحالية: **${activeAfter}/3**\n` +
-            `⭐ حصلت على **+${POINTS.warning} نقاط**.`;
-
-        if (autoTimeout) {
-
-            message +=
-                `\n\n🚨 وصل العضو إلى 3 تحذيرات وتم إعطاؤه **Timeout لمدة 30 دقيقة**.`;
-        }
-
-        // ----------------------------------------------------
-        // DM
-        // ----------------------------------------------------
-
-        try {
-
-            await target.send(
-                `⚠️ **تم إعطاؤك تحذيرًا في ${guild.name}**\n\n` +
-                `📝 السبب: ${reason}\n` +
-                `⏳ المدة: ${formatDuration(duration)}\n` +
-                `📊 تحذيراتك الحالية: ${activeAfter}/3`
-            );
-
-        } catch {}
-
-        return {
-            success: true,
-            message
-        };
-
-    } catch (error) {
-
-        console.error(
-            "executeWarn:",
-            error
-        );
-
-        return {
-            success: false,
-            message:
-                "❌ حدث خطأ أثناء تنفيذ التحذير."
-        };
-    }
-}
-
-
-// ============================================================
-// MODERATION — TIMEOUT
-// ============================================================
-
-async function executeTimeout(
-    guild,
-    target,
-    moderator,
-    reason,
-    durationInput
-) {
-
-    try {
-
-        const duration =
-            parseDuration(
-                durationInput
-            );
-
-        if (!duration) {
-
-            return {
-                success: false,
-                message:
-                    "❌ مدة التايم غير صحيحة."
-            };
-        }
-
-        const MAX_TIMEOUT =
-            28 * 24 * 60 * 60 * 1000;
-
-        if (
-            duration > MAX_TIMEOUT
-        ) {
-
-            return {
-                success: false,
-                message:
-                    "❌ أقصى مدة للـ Timeout هي 28 يوم."
-            };
-        }
-
-        if (
-            !target.moderatable
-        ) {
-
-            return {
-                success: false,
-                message:
-                    "❌ لا أستطيع إعطاء Timeout لهذا العضو."
-            };
-        }
-
-        await target.timeout(
-            duration,
-            `${reason} | بواسطة ${moderator.user.tag}`
-        );
-
-        const user =
-            getUserData(
-                guild.id,
-                moderator.id
-            );
-
         user.timeouts =
-            Number(user.timeouts || 0) + 1;
+            (user.timeouts || 0) + 1;
+
+        stats.timeouts =
+            (stats.timeouts || 0) + 1;
 
         addPoints(
             guild.id,
@@ -3688,370 +4300,463 @@ async function executeTimeout(
             POINTS.timeout
         );
 
-        const stats =
-            getStats(
-                guild.id,
-                moderator.id
-            );
-
-        stats.timeouts =
-            Number(stats.timeouts || 0) + 1;
-
         saveData();
+
 
         await sendLog(
             guild,
             "⏱️ Timeout",
-            [
-                `👤 العضو: ${target}`,
-                `🛡️ بواسطة: ${moderator}`,
-                `📝 السبب: ${reason}`,
-                `⏳ المدة: ${formatDuration(duration)}`
-            ].join("\n"),
-            0xFEE75C
+            `**العضو:** ${target.user.tag}\n**بواسطة:** ${moderator}\n**المدة:** ${durationInput}\n**السبب:** ${reason}`,
+            0xE67E22
         );
+
 
         try {
 
-            await target.send(
-                `⏱️ **تم إعطاؤك Timeout في ${guild.name}**\n\n` +
-                `📝 السبب: ${reason}\n` +
-                `⏳ المدة: ${formatDuration(duration)}`
-            );
+            await target.send({
+                embeds: [
+
+                    new EmbedBuilder()
+                        .setColor(0xE67E22)
+                        .setTitle(
+                            "⏱️ تم إعطاؤك تايم أوت"
+                        )
+                        .setDescription(
+                            `تم إعطاؤك تايم أوت في **${guild.name}**.`
+                        )
+                        .addFields(
+
+                            {
+                                name:
+                                    "المدة",
+
+                                value:
+                                    durationInput,
+
+                                inline:
+                                    true
+                            },
+
+                            {
+                                name:
+                                    "السبب",
+
+                                value:
+                                    reason,
+
+                                inline:
+                                    true
+                            }
+                        )
+                        .setTimestamp()
+                ]
+            });
 
         } catch {}
 
-        return {
-            success: true,
-            message:
-                `⏱️ تم إعطاء ${target} Timeout.\n` +
-                `📝 السبب: **${reason}**\n` +
-                `⏳ المدة: **${formatDuration(duration)}**\n` +
-                `⭐ حصلت على **+${POINTS.timeout} نقاط**.`
-        };
-
     } catch (error) {
 
-        console.error(
-            "executeTimeout:",
-            error
+        throw new Error(
+            `فشل إعطاء التايم أوت: ${error.message}`
         );
-
-        return {
-            success: false,
-            message:
-                "❌ حدث خطأ أثناء تنفيذ الـ Timeout."
-        };
     }
 }
 
 
-// ============================================================
-// MODERATION — JAIL
-// ============================================================
+// ==================================================
+// JAIL
+// ==================================================
 
 async function executeJail(
     guild,
     target,
     moderator,
-    reason,
+    reason = "لم يتم تحديد سبب.",
     durationInput
 ) {
 
+    if (!guild) {
+        throw new Error(
+            "السيرفر غير موجود."
+        );
+    }
+
+    if (!target) {
+        throw new Error(
+            "العضو غير موجود."
+        );
+    }
+
+    const duration =
+        parseDuration(
+            durationInput
+        );
+
+    if (!duration) {
+        throw new Error(
+            "مدة السجن غير صحيحة."
+        );
+    }
+
+    const guildData =
+        getGuildData(
+            guild.id
+        );
+
+    if (
+        !guildData.jailRoleId
+    ) {
+
+        throw new Error(
+            "لم يتم تحديد رتبة السجن. استخدم إعداد رتبة السجن أولًا."
+        );
+    }
+
+    const jailRole =
+        guild.roles.cache.get(
+            guildData.jailRoleId
+        );
+
+    if (!jailRole) {
+
+        throw new Error(
+            "رتبة السجن غير موجودة."
+        );
+    }
+
+    if (
+        !guild.members.me
+    ) {
+
+        throw new Error(
+            "تعذر العثور على البوت داخل السيرفر."
+        );
+    }
+
+    if (
+        !guild.members.me.permissions.has(
+            PermissionsBitField.Flags.ManageRoles
+        )
+    ) {
+
+        throw new Error(
+            "البوت يحتاج صلاحية Manage Roles."
+        );
+    }
+
+    if (
+        jailRole.position >=
+        guild.members.me.roles.highest.position
+    ) {
+
+        throw new Error(
+            "رتبة السجن أعلى من رتبة البوت."
+        );
+    }
+
+    if (
+        target.id ===
+        moderator.id
+    ) {
+
+        throw new Error(
+            "لا يمكنك سجن نفسك."
+        );
+    }
+
+    if (
+        target.id ===
+        guild.ownerId
+    ) {
+
+        throw new Error(
+            "لا يمكن سجن مالك السيرفر."
+        );
+    }
+
+    const existing =
+        getActiveJail(
+            guild.id,
+            target.id
+        );
+
+    if (existing) {
+
+        throw new Error(
+            "هذا العضو مسجون بالفعل."
+        );
+    }
+
+
+    // ----------------------------------------------
+    // SAVE ORIGINAL ROLES
+    // ----------------------------------------------
+
+    const originalRoles =
+        target.roles.cache
+            .filter(
+                role =>
+                    role.id !== guild.id
+            )
+            .map(
+                role => role.id
+            );
+
+    const manageableRoles =
+        target.roles.cache
+            .filter(
+                role =>
+                    role.id !== guild.id &&
+                    role.editable
+            )
+            .map(
+                role => role.id
+            );
+
+
+    // ----------------------------------------------
+    // REMOVE ROLES
+    // ----------------------------------------------
+
     try {
 
-        const guildData =
-            getGuildData(
-                guild.id
-            );
-
-        if (
-            !guildData.jailRoleId
-        ) {
-
-            return {
-                success: false,
-                message:
-                    "❌ لم يتم تحديد رتبة السجن.\nاستخدم إعدادات البوت وحدد Jail Role أولًا."
-            };
-        }
-
-        const duration =
-            parseDuration(
-                durationInput
-            );
-
-        if (!duration) {
-
-            return {
-                success: false,
-                message:
-                    "❌ مدة السجن غير صحيحة."
-            };
-        }
-
-        const jailRole =
-            guild.roles.cache.get(
-                guildData.jailRoleId
-            );
-
-        if (!jailRole) {
-
-            return {
-                success: false,
-                message:
-                    "❌ رتبة السجن غير موجودة."
-            };
-        }
-
-        if (
-            !guild.members.me
-                .permissions.has(
-                    PermissionsBitField.Flags.ManageRoles
-                )
-        ) {
-
-            return {
-                success: false,
-                message:
-                    "❌ البوت لا يملك صلاحية Manage Roles."
-            };
-        }
-
-        if (
-            jailRole.position >=
-            guild.members.me.roles.highest.position
-        ) {
-
-            return {
-                success: false,
-                message:
-                    "❌ رتبة السجن أعلى من رتبة البوت."
-            };
-        }
-
-        if (
-            target.roles.cache.has(
-                jailRole.id
-            )
-        ) {
-
-            return {
-                success: false,
-                message:
-                    "❌ العضو مسجون بالفعل."
-            };
-        }
-
-        const now =
-            Date.now();
-
-        const guildJails =
-            getGuildJails(
-                guild.id
-            );
-
-        if (
-            !guildJails[target.id]
-        ) {
-
-            guildJails[target.id] =
-                [];
-        }
-
-        const originalRoles =
-            target.roles.cache
-                .filter(
-                    role =>
-                        role.id !==
-                            guild.id &&
-                        !role.managed &&
-                        role.id !==
-                            jailRole.id
-                )
-                .map(
-                    role =>
-                        role.id
-                );
-
-        const jail = {
-
-            id:
-                `jail_${Date.now()}_${Math.random()
-                    .toString(36)
-                    .slice(2, 8)}`,
-
-            userId:
-                target.id,
-
-            moderatorId:
-                moderator.id,
-
-            reason:
-                reason || "بدون سبب",
-
-            duration:
-                duration,
-
-            createdAt:
-                now,
-
-            expiresAt:
-                now + duration,
-
-            originalRoles:
-                originalRoles
-
-        };
-
         await target.roles.remove(
-            originalRoles,
-            `Jail: ${reason}`
+            manageableRoles,
+            "سجن العضو"
         );
-
-        await target.roles.add(
-            jailRole,
-            `Jail: ${reason}`
-        );
-
-        guildJails[target.id]
-            .push(jail);
-
-        const user =
-            getUserData(
-                guild.id,
-                moderator.id
-            );
-
-        user.jails =
-            Number(user.jails || 0) + 1;
-
-        addPoints(
-            guild.id,
-            moderator.id,
-            POINTS.jail
-        );
-
-        const stats =
-            getStats(
-                guild.id,
-                moderator.id
-            );
-
-        stats.jails =
-            Number(stats.jails || 0) + 1;
-
-        saveData();
-
-        await sendLog(
-            guild,
-            "🔒 سجن عضو",
-            [
-                `👤 العضو: ${target}`,
-                `🛡️ بواسطة: ${moderator}`,
-                `📝 السبب: ${reason}`,
-                `⏳ المدة: ${formatDuration(duration)}`
-            ].join("\n"),
-            0x5865F2
-        );
-
-        try {
-
-            await target.send(
-                `🔒 **تم سجنك في ${guild.name}**\n\n` +
-                `📝 السبب: ${reason}\n` +
-                `⏳ المدة: ${formatDuration(duration)}`
-            );
-
-        } catch {}
-
-        return {
-            success: true,
-            message:
-                `🔒 تم سجن ${target} بنجاح.\n` +
-                `📝 السبب: **${reason}**\n` +
-                `⏳ المدة: **${formatDuration(duration)}**\n` +
-                `⭐ حصلت على **+${POINTS.jail} نقاط**.`
-        };
 
     } catch (error) {
 
         console.error(
-            "executeJail:",
+            "Jail Remove Roles Error:",
             error
         );
-
-        return {
-            success: false,
-            message:
-                "❌ حدث خطأ أثناء تنفيذ السجن."
-        };
     }
+
+
+    // ----------------------------------------------
+    // ADD JAIL ROLE
+    // ----------------------------------------------
+
+    try {
+
+        await target.roles.add(
+            jailRole,
+            "سجن العضو"
+        );
+
+    } catch (error) {
+
+        throw new Error(
+            `تعذر إضافة رتبة السجن: ${error.message}`
+        );
+    }
+
+
+    // ----------------------------------------------
+    // SAVE JAIL
+    // ----------------------------------------------
+
+    const jails =
+        getGuildJails(
+            guild.id
+        );
+
+    const jail = {
+
+        id:
+            `${Date.now()}_${Math.random()
+                .toString(36)
+                .slice(2, 8)}`,
+
+        userId:
+            target.id,
+
+        moderatorId:
+            moderator.id,
+
+        reason:
+            reason,
+
+        duration:
+            durationInput,
+
+        createdAt:
+            Date.now(),
+
+        expiresAt:
+            Date.now() +
+            duration.milliseconds,
+
+        originalRoles:
+            originalRoles,
+
+        jailRoleId:
+            jailRole.id
+    };
+
+    jails.push(
+        jail
+    );
+
+
+    // ----------------------------------------------
+    // POINTS
+    // ----------------------------------------------
+
+    const user =
+        getUserData(
+            guild.id,
+            moderator.id
+        );
+
+    const stats =
+        getStats(
+            guild.id,
+            moderator.id
+        );
+
+    user.jails =
+        (user.jails || 0) + 1;
+
+    stats.jails =
+        (stats.jails || 0) + 1;
+
+    addPoints(
+        guild.id,
+        moderator.id,
+        POINTS.jail
+    );
+
+    saveData();
+
+
+    // ----------------------------------------------
+    // LOG
+    // ----------------------------------------------
+
+    await sendLog(
+        guild,
+        "🔒 Jail",
+        `**العضو:** ${target.user.tag}\n**بواسطة:** ${moderator}\n**المدة:** ${durationInput}\n**السبب:** ${reason}`,
+        0x8E44AD
+    );
+
+
+    // ----------------------------------------------
+    // DM
+    // ----------------------------------------------
+
+    try {
+
+        await target.send({
+            embeds: [
+
+                new EmbedBuilder()
+                    .setColor(0x8E44AD)
+                    .setTitle(
+                        "🔒 تم سجنك"
+                    )
+                    .setDescription(
+                        `تم سجنك في **${guild.name}**.`
+                    )
+                    .addFields(
+
+                        {
+                            name:
+                                "المدة",
+
+                            value:
+                                durationInput,
+
+                            inline:
+                                true
+                        },
+
+                        {
+                            name:
+                                "السبب",
+
+                            value:
+                                reason,
+
+                            inline:
+                                true
+                        }
+                    )
+                    .setTimestamp()
+            ]
+        });
+
+    } catch {}
+
+    return jail;
 }
 
 
-// ============================================================
+// ==================================================
 // RELEASE FROM JAIL
-// ============================================================
+// ==================================================
 
 async function releaseFromJail(
     guild,
     userId
 ) {
 
+    const jails =
+        getGuildJails(
+            guild.id
+        );
+
+    const index =
+        jails.findIndex(
+            jail =>
+                jail.userId ===
+                userId
+        );
+
+    if (
+        index === -1
+    ) {
+        return false;
+    }
+
+    const jail =
+        jails[index];
+
+    let member = null;
+
     try {
 
-        const guildJails =
-            getGuildJails(
-                guild.id
-            );
-
-        const records =
-            guildJails[userId];
-
-        if (
-            !records ||
-            !records.length
-        ) {
-            return false;
-        }
-
-        const jail =
-            records
-                .find(
-                    item =>
-                        item.expiresAt >
-                        0
-                );
-
-        if (!jail) {
-            return false;
-        }
-
-        const member =
+        member =
             await guild.members.fetch(
                 userId
-            ).catch(
-                () => null
             );
 
-        if (!member) {
+    } catch {
 
-            delete guildJails[userId];
+        jails.splice(
+            index,
+            1
+        );
 
-            saveData();
+        saveData();
 
-            return false;
-        }
+        return false;
+    }
 
-        const guildData =
-            getGuildData(
-                guild.id
-            );
+
+    // ----------------------------------------------
+    // REMOVE JAIL ROLE
+    // ----------------------------------------------
+
+    if (
+        jail.jailRoleId
+    ) {
 
         const jailRole =
             guild.roles.cache.get(
-                guildData.jailRoleId
+                jail.jailRoleId
             );
 
         if (
@@ -4066,10 +4771,22 @@ async function releaseFromJail(
                 "انتهاء مدة السجن"
             ).catch(() => {});
         }
+    }
+
+
+    // ----------------------------------------------
+    // RESTORE ROLES
+    // ----------------------------------------------
+
+    if (
+        Array.isArray(
+            jail.originalRoles
+        )
+    ) {
 
         for (
-            const roleId
-            of jail.originalRoles || []
+            const roleId of
+            jail.originalRoles
         ) {
 
             const role =
@@ -4077,183 +4794,134 @@ async function releaseFromJail(
                     roleId
                 );
 
+            if (!role) {
+                continue;
+            }
+
             if (
-                role &&
-                !role.managed
+                role.position >=
+                guild.members.me.roles.highest.position
+            ) {
+                continue;
+            }
+
+            if (
+                !member.roles.cache.has(
+                    role.id
+                )
             ) {
 
                 await member.roles.add(
                     role,
-                    "استعادة رتبة بعد انتهاء السجن"
+                    "انتهاء مدة السجن"
                 ).catch(() => {});
             }
         }
-
-        delete guildJails[userId];
-
-        saveData();
-
-        await sendLog(
-            guild,
-            "🔓 انتهاء السجن",
-            `👤 العضو: <@${userId}>\n⏰ انتهت مدة السجن.`,
-            0x57F287
-        );
-
-        try {
-
-            await member.send(
-                `🔓 انتهت مدة سجنك في **${guild.name}**.`
-            );
-
-        } catch {}
-
-        return true;
-
-    } catch (error) {
-
-        console.error(
-            "releaseFromJail:",
-            error
-        );
-
-        return false;
     }
+
+
+    // ----------------------------------------------
+    // REMOVE RECORD
+    // ----------------------------------------------
+
+    jails.splice(
+        index,
+        1
+    );
+
+    saveData();
+
+
+    // ----------------------------------------------
+    // LOG
+    // ----------------------------------------------
+
+    await sendLog(
+        guild,
+        "🔓 Jail Released",
+        `تم الإفراج عن <@${userId}> بعد انتهاء مدة السجن.`,
+        0x2ECC71
+    );
+
+
+    // ----------------------------------------------
+    // DM
+    // ----------------------------------------------
+
+    try {
+
+        await member.send({
+            content:
+                `🔓 انتهت مدة سجنك في **${guild.name}** وتمت إعادة رتبك.`
+        });
+
+    } catch {}
+
+    return true;
 }
 
 
-// ============================================================
-// GET ACTIVE JAIL
-// ============================================================
-
-function getActiveJail(
-    guildId,
-    userId
-) {
-
-    const guildJails =
-        getGuildJails(
-            guildId
-        );
-
-    const records =
-        guildJails[userId];
-
-    if (
-        !records ||
-        !records.length
-    ) {
-        return null;
-    }
-
-    const now =
-        Date.now();
-
-    const active =
-        records.find(
-            jail =>
-                jail.expiresAt >
-                now
-        );
-
-    return active || null;
-}
-
-
-// ============================================================
+// ==================================================
 // TICKET HELPERS
-// ============================================================
-
-function getGuildTickets(
-    guildId
-) {
-
-    if (
-        !data.tickets[guildId]
-    ) {
-
-        data.tickets[guildId] =
-            {};
-    }
-
-    return data.tickets[guildId];
-}
-
-
-function findTicketByChannel(
-    guildId,
-    channelId
-) {
-
-    const tickets =
-        getGuildTickets(
-            guildId
-        );
-
-    return Object.values(
-        tickets
-    ).find(
-        ticket =>
-            ticket.channelId ===
-            channelId
-    ) || null;
-}
-
-
-function findOpenTicketByUser(
-    guildId,
-    userId
-) {
-
-    const tickets =
-        getGuildTickets(
-            guildId
-        );
-
-    return Object.values(
-        tickets
-    ).find(
-        ticket =>
-            ticket.ownerId ===
-                userId &&
-            ticket.status ===
-                "open"
-    ) || null;
-}
-
-
-// ============================================================
-// TICKET PERMISSION
-// ============================================================
+// ==================================================
 
 function canManageTicket(
+    ticket,
     member,
-    ticket
+    guildData
 ) {
 
-    if (!member || !ticket) {
+    if (
+        !ticket ||
+        !member
+    ) {
         return false;
     }
 
     if (
-        member.id ===
-        ticket.ownerId
+        ticket.userId ===
+        member.id
     ) {
         return true;
     }
 
     if (
-        ticket.claimedBy &&
-        member.id ===
-        ticket.claimedBy
+        ticket.claimedBy ===
+        member.id
     ) {
         return true;
     }
 
-    const guildData =
-        getGuildData(
-            member.guild.id
-        );
+    return (
+        getStaffLevel(
+            member,
+            guildData
+        ) > 0
+    );
+}
+
+
+function canWriteInTicket(
+    ticket,
+    member,
+    guildData,
+    claimerLevel = null
+) {
+
+    if (
+        !ticket ||
+        !member
+    ) {
+        return false;
+    }
+
+    // صاحب التذكرة
+    if (
+        ticket.userId ===
+        member.id
+    ) {
+        return true;
+    }
 
     const level =
         getStaffLevel(
@@ -4262,92 +4930,44 @@ function canManageTicket(
         );
 
     if (
-        level >= 1
+        level <= 0
     ) {
-        return true;
-    }
-
-    return false;
-}
-
-
-function canWriteInTicket(
-    member,
-    ticket
-) {
-
-    if (!member || !ticket) {
         return false;
     }
 
-    // صاحب التذكرة
+    // غير مستلمة
     if (
-        member.id ===
-        ticket.ownerId
+        !ticket.claimedBy
     ) {
         return true;
-    }
-
-    // لو التذكرة غير مستلمة
-    if (!ticket.claimedBy) {
-
-        const guildData =
-            getGuildData(
-                member.guild.id
-            );
-
-        return (
-            getStaffLevel(
-                member,
-                guildData
-            ) >= 1
-        );
     }
 
     // المستلم
     if (
-        member.id ===
-        ticket.claimedBy
+        ticket.claimedBy ===
+        member.id
     ) {
         return true;
     }
 
-    const guildData =
-        getGuildData(
-            member.guild.id
-        );
+    if (
+        claimerLevel === null
+    ) {
 
-    const memberLevel =
-        getStaffLevel(
-            member,
-            guildData
-        );
-
-    const claimer =
-        member.guild.members.cache.get(
-            ticket.claimedBy
-        );
-
-    if (!claimer) {
         return false;
     }
 
-    const claimerLevel =
-        getStaffLevel(
-            claimer,
-            guildData
-        );
-
+    // الأعلى فقط
     return (
-        memberLevel >
+        level >
         claimerLevel
     );
 }
 
 
-// ============================================================
+// ==================================================
 // CREATE TICKET
-// ============================================================
+// ==================================================
 
 async function createTicket(
     interaction,
@@ -4357,28 +4977,37 @@ async function createTicket(
     const guild =
         interaction.guild;
 
+    if (!guild) {
+
+        throw new Error(
+            "هذا النظام يعمل داخل السيرفر فقط."
+        );
+    }
+
     const guildData =
         getGuildData(
             guild.id
         );
 
+    const panels =
+        getGuildTicketPanels(
+            guild.id
+        );
+
     const panel =
-        guildData.ticketPanels[
-            panelId
-        ];
+        panels[panelId];
 
     if (!panel) {
 
-        return {
-            success: false,
-            message:
-                "❌ لوحة التذاكر غير موجودة."
-        };
+        throw new Error(
+            "بانل التذاكر غير موجودة."
+        );
     }
 
-    // --------------------------------------------------------
-    // Prevent duplicate open tickets
-    // --------------------------------------------------------
+
+    // ----------------------------------------------
+    // EXISTING TICKET
+    // ----------------------------------------------
 
     const existing =
         findOpenTicketByUser(
@@ -4388,119 +5017,138 @@ async function createTicket(
 
     if (existing) {
 
-        const existingChannel =
-            guild.channels.cache.get(
-                existing.channelId
-            );
+        throw new Error(
+            `لديك تذكرة مفتوحة بالفعل: <#${existing.channelId}>`
+        );
+    }
 
-        if (existingChannel) {
 
-            return {
-                success: false,
-                message:
-                    `❌ لديك تذكرة مفتوحة بالفعل: ${existingChannel}`
-            };
-        }
+    // ----------------------------------------------
+    // CATEGORY
+    // ----------------------------------------------
 
-        existing.status =
-            "closed";
+    const categoryId =
+        panel.categoryId ||
+        guildData.ticketCategoryId;
+
+    if (!categoryId) {
+
+        throw new Error(
+            "لم يتم تحديد كاتيجوري للتذاكر."
+        );
     }
 
     const category =
         guild.channels.cache.get(
-            panel.categoryId ||
-            guildData.ticketCategoryId
+            categoryId
         );
 
     if (
         !category ||
         category.type !==
-            ChannelType.GuildCategory
+        ChannelType.GuildCategory
     ) {
 
-        return {
-            success: false,
-            message:
-                "❌ Category التذاكر غير موجودة."
-        };
+        throw new Error(
+            "كاتيجوري التذاكر غير موجودة."
+        );
     }
 
-    const ticketId =
-        `ticket_${Date.now()}_${Math.random()
-            .toString(36)
-            .slice(2, 7)}`;
 
-    const ticketName =
+    // ----------------------------------------------
+    // CREATE CHANNEL
+    // ----------------------------------------------
+
+    const channelName =
         `ticket-${interaction.user.username}`
             .toLowerCase()
             .replace(
-                /[^a-z0-9-_]/g,
-                ""
+                /[^a-z0-9\u0600-\u06FF_-]/g,
+                "-"
             )
-            .slice(0, 80) ||
-        `ticket-${interaction.user.id}`;
+            .slice(
+                0,
+                80
+            );
 
-    const guildTickets =
-        getGuildTickets(
-            guild.id
-        );
+    const channel =
+        await guild.channels.create({
 
-    const permissionOverwrites = [
+            name:
+                channelName,
 
-        {
-            id:
-                guild.roles.everyone.id,
+            type:
+                ChannelType.GuildText,
 
-            deny: [
-                PermissionsBitField.Flags.ViewChannel
+            parent:
+                category.id,
+
+            permissionOverwrites: [
+
+                {
+                    id:
+                        guild.roles.everyone.id,
+
+                    deny:
+                        [
+                            PermissionsBitField.Flags.ViewChannel
+                        ]
+                },
+
+                {
+                    id:
+                        interaction.user.id,
+
+                    allow:
+                        [
+                            PermissionsBitField.Flags.ViewChannel,
+                            PermissionsBitField.Flags.SendMessages,
+                            PermissionsBitField.Flags.ReadMessageHistory,
+                            PermissionsBitField.Flags.AttachFiles
+                        ]
+                },
+
+                {
+                    id:
+                        guild.members.me.id,
+
+                    allow:
+                        [
+                            PermissionsBitField.Flags.ViewChannel,
+                            PermissionsBitField.Flags.SendMessages,
+                            PermissionsBitField.Flags.ReadMessageHistory,
+                            PermissionsBitField.Flags.ManageChannels,
+                            PermissionsBitField.Flags.ManageMessages
+                        ]
+                }
             ]
-        },
+        });
 
-        {
-            id:
-                interaction.user.id,
 
-            allow: [
-                PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.SendMessages,
-                PermissionsBitField.Flags.ReadMessageHistory,
-                PermissionsBitField.Flags.AttachFiles,
-                PermissionsBitField.Flags.EmbedLinks
-            ]
-        },
+    // ----------------------------------------------
+    // STAFF ACCESS
+    // ----------------------------------------------
 
-        {
-            id:
-                guild.members.me.id,
-
-            allow: [
-                PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.SendMessages,
-                PermissionsBitField.Flags.ReadMessageHistory,
-                PermissionsBitField.Flags.ManageChannels,
-                PermissionsBitField.Flags.ManageMessages,
-                PermissionsBitField.Flags.AttachFiles,
-                PermissionsBitField.Flags.EmbedLinks
-            ]
-        }
-
-    ];
-
-    // --------------------------------------------------------
-    // Staff roles
-    // --------------------------------------------------------
-
-    const allStaffRoles =
+    const staffRoleIds =
         [
-            ...(guildData.staffRoles.junior || []),
-            ...(guildData.staffRoles.middle || []),
-            ...(guildData.staffRoles.senior || []),
-            ...(guildData.staffRoles.owner || [])
+
+            ...(guildData.staffRoles?.junior || []),
+
+            ...(guildData.staffRoles?.middle || []),
+
+            ...(guildData.staffRoles?.senior || []),
+
+            ...(guildData.staffRoles?.owner || [])
         ];
 
+    const uniqueRoleIds =
+        [...new Set(
+            staffRoleIds
+        )];
+
     for (
-        const roleId
-        of [...new Set(allStaffRoles)]
+        const roleId of
+        uniqueRoleIds
     ) {
 
         const role =
@@ -4512,55 +5160,47 @@ async function createTicket(
             continue;
         }
 
-        permissionOverwrites.push({
+        await channel.permissionOverwrites.edit(
+            role.id,
+            {
 
-            id:
-                role.id,
+                ViewChannel:
+                    true,
 
-            allow: [
-                PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.ReadMessageHistory,
-                PermissionsBitField.Flags.SendMessages
-            ]
+                ReadMessageHistory:
+                    true,
 
-        });
+                SendMessages:
+                    true
+            }
+        ).catch(() => {});
     }
 
-    const channel =
-        await guild.channels.create({
 
-            name:
-                ticketName,
+    // ----------------------------------------------
+    // SAVE TICKET
+    // ----------------------------------------------
 
-            type:
-                ChannelType.GuildText,
+    const tickets =
+        getGuildTickets(
+            guild.id
+        );
 
-            parent:
-                category.id,
-
-            permissionOverwrites
-
-        });
-
-    guildTickets[ticketId] = {
+    const ticket = {
 
         id:
-            ticketId,
-
-        guildId:
-            guild.id,
+            `${Date.now()}_${Math.random()
+                .toString(36)
+                .slice(2, 8)}`,
 
         channelId:
             channel.id,
 
-        ownerId:
+        userId:
             interaction.user.id,
 
         claimedBy:
             null,
-
-        status:
-            "open",
 
         panelId:
             panelId,
@@ -4568,188 +5208,171 @@ async function createTicket(
         createdAt:
             Date.now(),
 
+        closed:
+            false,
+
         closedAt:
             null
-
     };
+
+    tickets.push(
+        ticket
+    );
 
     saveData();
 
-    // --------------------------------------------------------
-    // Ticket Embed
-    // --------------------------------------------------------
 
-    const ticketEmbed =
+    // ----------------------------------------------
+    // TICKET MESSAGE
+    // ----------------------------------------------
+
+    const embed =
         new EmbedBuilder()
             .setColor(0x5865F2)
             .setTitle(
-                "🎫 تذكرة جديدة"
+                `🎫 ${panel.name}`
             )
             .setDescription(
-                `مرحبًا ${interaction.user} 👋\n\n` +
-                "سيقوم أحد أعضاء الإدارة بمساعدتك قريبًا.\n" +
-                "يرجى كتابة تفاصيل المشكلة أو الطلب هنا."
+                `أهلًا ${interaction.user} 👋\n\nتم إنشاء تذكرتك بنجاح.\nسيقوم أحد أعضاء الإدارة بالرد عليك قريبًا.`
             )
             .addFields(
 
                 {
-                    name: "👤 صاحب التذكرة",
+                    name:
+                        "👤 صاحب التذكرة",
+
                     value:
                         `${interaction.user}`,
-                    inline: true
+
+                    inline:
+                        true
                 },
 
                 {
-                    name: "📊 الحالة",
+                    name:
+                        "📋 الحالة",
+
                     value:
                         "🟢 مفتوحة",
-                    inline: true
+
+                    inline:
+                        true
                 },
 
                 {
-                    name: "🛡️ المستلم",
+                    name:
+                        "🎯 المستلم",
+
                     value:
                         "لم يتم الاستلام بعد",
-                    inline: true
-                }
 
+                    inline:
+                        true
+                }
             )
             .setFooter({
                 text:
-                    "نظام التذاكر الاحترافي"
+                    `Ticket ID: ${ticket.id}`
             })
             .setTimestamp();
-
-    const claimButton =
-        new ButtonBuilder()
-            .setCustomId(
-                "ticket_claim"
-            )
-            .setLabel(
-                "استلام التذكرة"
-            )
-            .setEmoji("🙋")
-            .setStyle(
-                ButtonStyle.Success
-            );
-
-    const unclaimButton =
-        new ButtonBuilder()
-            .setCustomId(
-                "ticket_unclaim"
-            )
-            .setLabel(
-                "إلغاء الاستلام"
-            )
-            .setEmoji("↩️")
-            .setStyle(
-                ButtonStyle.Secondary
-            );
-
-    const closeButton =
-        new ButtonBuilder()
-            .setCustomId(
-                "ticket_close"
-            )
-            .setLabel(
-                "إغلاق"
-            )
-            .setEmoji("🔒")
-            .setStyle(
-                ButtonStyle.Danger
-            );
 
     const row =
         new ActionRowBuilder()
             .addComponents(
-                claimButton,
-                unclaimButton,
-                closeButton
+
+                new ButtonBuilder()
+                    .setCustomId(
+                        "ticket_claim"
+                    )
+                    .setLabel(
+                        "استلام"
+                    )
+                    .setEmoji(
+                        "🙋"
+                    )
+                    .setStyle(
+                        ButtonStyle.Success
+                    ),
+
+                new ButtonBuilder()
+                    .setCustomId(
+                        "ticket_unclaim"
+                    )
+                    .setLabel(
+                        "ترك"
+                    )
+                    .setEmoji(
+                        "↩️"
+                    )
+                    .setStyle(
+                        ButtonStyle.Secondary
+                    ),
+
+                new ButtonBuilder()
+                    .setCustomId(
+                        "ticket_close"
+                    )
+                    .setLabel(
+                        "إغلاق"
+                    )
+                    .setEmoji(
+                        "🔒"
+                    )
+                    .setStyle(
+                        ButtonStyle.Danger
+                    )
             );
 
     await channel.send({
-
-        content:
-            `${interaction.user}`,
-
-        embeds: [
-            ticketEmbed
-        ],
-
-        components: [
-            row
-        ]
-
+        embeds: [embed],
+        components: [row]
     });
+
+
+    // ----------------------------------------------
+    // LOG
+    // ----------------------------------------------
 
     await sendLog(
         guild,
-        "🎫 إنشاء تذكرة",
-        [
-            `👤 صاحب التذكرة: ${interaction.user}`,
-            `📁 التذكرة: ${channel}`,
-            `🆔 ID: \`${ticketId}\``
-        ].join("\n"),
+        "🎫 Ticket Created",
+        `تم إنشاء تذكرة جديدة بواسطة ${interaction.user} في ${channel}.`,
         0x5865F2
     );
 
-    return {
-
-        success: true,
-
-        message:
-            `✅ تم إنشاء تذكرتك: ${channel}`,
-
-        channel:
-            channel,
-
-        ticket:
-            guildTickets[ticketId]
-
-    };
+    return channel;
 }
 
 
-// ============================================================
+// ==================================================
 // CLAIM TICKET
-// ============================================================
+// ==================================================
 
 async function claimTicket(
     channel,
     member
 ) {
 
+    const guild =
+        channel.guild;
+
+    const guildData =
+        getGuildData(
+            guild.id
+        );
+
     const ticket =
         findTicketByChannel(
-            channel.guild.id,
+            guild.id,
             channel.id
         );
 
     if (!ticket) {
 
-        return {
-            success: false,
-            message:
-                "❌ هذه القناة ليست تذكرة."
-        };
-    }
-
-    if (
-        ticket.status !==
-        "open"
-    ) {
-
-        return {
-            success: false,
-            message:
-                "❌ هذه التذكرة مغلقة."
-        };
-    }
-
-    const guildData =
-        getGuildData(
-            channel.guild.id
+        throw new Error(
+            "هذه القناة ليست تذكرة مفتوحة."
         );
+    }
 
     const level =
         getStaffLevel(
@@ -4758,333 +5381,354 @@ async function claimTicket(
         );
 
     if (
-        level < 1
+        level <= 0
     ) {
 
-        return {
-            success: false,
-            message:
-                "❌ ليس لديك صلاحية استلام التذاكر."
-        };
+        throw new Error(
+            "ليس لديك صلاحية استلام التذاكر."
+        );
     }
 
     if (
         ticket.claimedBy
     ) {
 
-        return {
-            success: false,
-            message:
-                `❌ التذكرة مستلمة بالفعل بواسطة <@${ticket.claimedBy}>.`
-        };
+        throw new Error(
+            `التذكرة مستلمة بالفعل من <@${ticket.claimedBy}>.`
+        );
     }
 
     ticket.claimedBy =
         member.id;
 
+    ticket.claimedAt =
+        Date.now();
+
+
+    // ----------------------------------------------
+    // POINTS
+    // ----------------------------------------------
+
     const user =
         getUserData(
-            channel.guild.id,
+            guild.id,
+            member.id
+        );
+
+    const stats =
+        getStats(
+            guild.id,
             member.id
         );
 
     user.ticketsClaimed =
-        Number(
-            user.ticketsClaimed || 0
-        ) + 1;
+        (user.ticketsClaimed || 0) + 1;
+
+    stats.ticketsClaimed =
+        (stats.ticketsClaimed || 0) + 1;
 
     addPoints(
-        channel.guild.id,
+        guild.id,
         member.id,
         POINTS.ticketClaim
     );
 
-    const stats =
-        getStats(
-            channel.guild.id,
-            member.id
-        );
 
-    stats.ticketsClaimed =
-        Number(
-            stats.ticketsClaimed || 0
-        ) + 1;
-
-    saveData();
-
-    // --------------------------------------------------------
-    // Give claimer direct send permission
-    // --------------------------------------------------------
+    // ----------------------------------------------
+    // PERMISSION
+    // ----------------------------------------------
 
     await channel.permissionOverwrites.edit(
         member.id,
         {
-            ViewChannel: true,
-            SendMessages: true,
-            ReadMessageHistory: true
+
+            ViewChannel:
+                true,
+
+            ReadMessageHistory:
+                true,
+
+            SendMessages:
+                true
         }
     ).catch(() => {});
 
-    const embed =
-        new EmbedBuilder()
-            .setColor(0x57F287)
-            .setTitle(
-                "🙋 تم استلام التذكرة"
-            )
-            .setDescription(
-                `قام ${member} باستلام التذكرة.`
-            )
-            .addFields({
 
-                name:
-                    "⭐ نقاط",
+    saveData();
 
-                value:
-                    `+${POINTS.ticketClaim} نقاط`
-
-            })
-            .setTimestamp();
 
     await channel.send({
         embeds: [
-            embed
+
+            new EmbedBuilder()
+                .setColor(0x2ECC71)
+                .setTitle(
+                    "🙋 تم استلام التذكرة"
+                )
+                .setDescription(
+                    `تم استلام التذكرة بواسطة ${member}.`
+                )
+                .setTimestamp()
         ]
     });
 
+
     await sendLog(
-        channel.guild,
-        "🙋 استلام تذكرة",
-        [
-            `🎫 التذكرة: ${channel}`,
-            `👤 المستلم: ${member}`,
-            `⭐ النقاط: +${POINTS.ticketClaim}`
-        ].join("\n"),
-        0x57F287
+        guild,
+        "🙋 Ticket Claimed",
+        `${member} استلم التذكرة <#${channel.id}>.`,
+        0x2ECC71
     );
 
-    return {
-
-        success: true,
-
-        message:
-            `✅ تم استلام التذكرة بواسطة ${member}.\n⭐ حصلت على **+${POINTS.ticketClaim} نقاط**.`
-
-    };
+    return true;
 }
 
 
-// ============================================================
+// ==================================================
 // UNCLAIM TICKET
-// ============================================================
+// ==================================================
 
 async function unclaimTicket(
     channel,
     member
 ) {
 
+    const guild =
+        channel.guild;
+
+    const guildData =
+        getGuildData(
+            guild.id
+        );
+
     const ticket =
         findTicketByChannel(
-            channel.guild.id,
+            guild.id,
             channel.id
         );
 
     if (!ticket) {
 
-        return {
-            success: false,
-            message:
-                "❌ هذه القناة ليست تذكرة."
-        };
+        throw new Error(
+            "هذه القناة ليست تذكرة مفتوحة."
+        );
     }
 
     if (
         !ticket.claimedBy
     ) {
 
-        return {
-            success: false,
-            message:
-                "❌ التذكرة غير مستلمة."
-        };
+        throw new Error(
+            "التذكرة غير مستلمة حاليًا."
+        );
     }
 
-    const guildData =
-        getGuildData(
-            channel.guild.id
-        );
-
-    const actorLevel =
+    const memberLevel =
         getStaffLevel(
             member,
             guildData
         );
 
+    let claimerLevel =
+        0;
+
     const claimer =
-        channel.guild.members.cache.get(
+        guild.members.cache.get(
             ticket.claimedBy
+        ) ||
+        await guild.members.fetch(
+            ticket.claimedBy
+        ).catch(
+            () => null
         );
 
-    const claimerLevel =
-        claimer
-            ? getStaffLevel(
+    if (claimer) {
+
+        claimerLevel =
+            getStaffLevel(
                 claimer,
                 guildData
-            )
-            : 0;
+            );
+    }
 
     if (
         member.id !==
-            ticket.claimedBy &&
-        actorLevel <=
-            claimerLevel
+        ticket.claimedBy &&
+        memberLevel <=
+        claimerLevel
     ) {
 
-        return {
-            success: false,
-            message:
-                "❌ لا يمكنك إلغاء استلام هذه التذكرة."
-        };
+        throw new Error(
+            "لا يمكنك ترك تذكرة مستلمة من موظف مساوي أو أعلى منك."
+        );
     }
 
-    const oldClaimer =
+
+    const previousClaimer =
         ticket.claimedBy;
 
     ticket.claimedBy =
         null;
 
+    ticket.unclaimedAt =
+        Date.now();
+
+
+    // ----------------------------------------------
+    // REMOVE EXPLICIT OVERWRITE
+    // ----------------------------------------------
+
     await channel.permissionOverwrites.delete(
-        oldClaimer
+        previousClaimer
     ).catch(() => {});
 
+
     saveData();
+
 
     await channel.send({
         embeds: [
 
             new EmbedBuilder()
-                .setColor(0xFEE75C)
+                .setColor(0xF1C40F)
                 .setTitle(
-                    "↩️ تم إلغاء استلام التذكرة"
+                    "↩️ تم ترك التذكرة"
                 )
                 .setDescription(
-                    `تم إلغاء استلام التذكرة بواسطة ${member}.`
+                    `تم ترك التذكرة ويمكن لموظف آخر استلامها الآن.\nبواسطة: ${member}`
                 )
                 .setTimestamp()
-
         ]
     });
 
-    return {
 
-        success: true,
+    await sendLog(
+        guild,
+        "↩️ Ticket Unclaimed",
+        `${member} قام بترك التذكرة <#${channel.id}>.`,
+        0xF1C40F
+    );
 
-        message:
-            "✅ تم إلغاء استلام التذكرة."
-
-    };
+    return true;
 }
 
 
-// ============================================================
+// ==================================================
 // CLOSE TICKET
-// ============================================================
+// ==================================================
 
 async function closeTicket(
     channel,
     member
 ) {
 
+    const guild =
+        channel.guild;
+
+    const guildData =
+        getGuildData(
+            guild.id
+        );
+
     const ticket =
         findTicketByChannel(
-            channel.guild.id,
+            guild.id,
             channel.id
         );
 
     if (!ticket) {
 
-        return {
-            success: false,
-            message:
-                "❌ هذه القناة ليست تذكرة."
-        };
+        throw new Error(
+            "هذه القناة ليست تذكرة مفتوحة."
+        );
     }
 
     if (
         !canManageTicket(
+            ticket,
             member,
-            ticket
+            guildData
         )
     ) {
 
-        return {
-            success: false,
-            message:
-                "❌ ليس لديك صلاحية إغلاق هذه التذكرة."
-        };
+        throw new Error(
+            "ليس لديك صلاحية إغلاق هذه التذكرة."
+        );
     }
 
-    if (
-        ticket.status ===
-        "closed"
-    ) {
-
-        return {
-            success: false,
-            message:
-                "❌ التذكرة مغلقة بالفعل."
-        };
-    }
-
-    ticket.status =
-        "closed";
+    ticket.closed =
+        true;
 
     ticket.closedAt =
         Date.now();
 
+    const closer =
+        getUserData(
+            guild.id,
+            member.id
+        );
+
+    const stats =
+        getStats(
+            guild.id,
+            member.id
+        );
+
+    closer.ticketsClosed =
+        (closer.ticketsClosed || 0) + 1;
+
+    stats.ticketsClosed =
+        (stats.ticketsClosed || 0) + 1;
+
     saveData();
 
+
+    // ----------------------------------------------
+    // LOG
+    // ----------------------------------------------
+
     await sendLog(
-        channel.guild,
-        "🔒 إغلاق تذكرة",
-        [
-            `🎫 التذكرة: ${channel}`,
-            `👤 بواسطة: ${member}`,
-            `📌 صاحب التذكرة: <@${ticket.ownerId}>`
-        ].join("\n"),
-        0xED4245
+        guild,
+        "🔒 Ticket Closed",
+        `تم إغلاق التذكرة <#${channel.id}> بواسطة ${member}.`,
+        0xE67E22
     );
 
-    await channel.send({
 
+    // ----------------------------------------------
+    // RATING
+    // ----------------------------------------------
+
+    await sendTicketRating(
+        guild,
+        ticket
+    );
+
+
+    // ----------------------------------------------
+    // MESSAGE
+    // ----------------------------------------------
+
+    await channel.send({
         embeds: [
 
             new EmbedBuilder()
-                .setColor(0xED4245)
+                .setColor(0xE67E22)
                 .setTitle(
                     "🔒 تم إغلاق التذكرة"
                 )
                 .setDescription(
-                    "سيتم حذف التذكرة بعد قليل."
+                    "سيتم حذف التذكرة خلال 3 ثوانٍ."
                 )
                 .setTimestamp()
-
         ]
-
     }).catch(() => {});
 
-    // --------------------------------------------------------
-    // Rating before deletion
-    // --------------------------------------------------------
-
-    await sendTicketRating(
-        channel.guild,
-        ticket
-    );
 
     setTimeout(
-        async () => {
+        () => {
 
-            await channel.delete(
+            channel.delete(
                 "إغلاق التذكرة"
             ).catch(() => {});
 
@@ -5092,45 +5736,39 @@ async function closeTicket(
         3000
     );
 
-    return {
-
-        success: true,
-
-        message:
-            "🔒 تم إغلاق التذكرة وسيتم حذفها بعد قليل."
-
-    };
+    return true;
 }
 
 
-// ============================================================
+// ==================================================
 // DELETE TICKET
-// ============================================================
+// ==================================================
 
 async function deleteTicket(
     channel,
     member
 ) {
 
+    const guild =
+        channel.guild;
+
+    const guildData =
+        getGuildData(
+            guild.id
+        );
+
     const ticket =
         findTicketByChannel(
-            channel.guild.id,
+            guild.id,
             channel.id
         );
 
     if (!ticket) {
 
-        return {
-            success: false,
-            message:
-                "❌ هذه القناة ليست تذكرة."
-        };
-    }
-
-    const guildData =
-        getGuildData(
-            channel.guild.id
+        throw new Error(
+            "هذه القناة ليست تذكرة مفتوحة."
         );
+    }
 
     const level =
         getStaffLevel(
@@ -5138,47 +5776,82 @@ async function deleteTicket(
             guildData
         );
 
-    if (
-        member.id !==
-            ticket.ownerId &&
-        member.id !==
-            ticket.claimedBy &&
-        level < 2
-    ) {
+    const allowed =
+        ticket.userId === member.id ||
+        ticket.claimedBy === member.id ||
+        level >= 2;
 
-        return {
-            success: false,
-            message:
-                "❌ ليس لديك صلاحية حذف هذه التذكرة."
-        };
+    if (!allowed) {
+
+        throw new Error(
+            "ليس لديك صلاحية حذف هذه التذكرة."
+        );
     }
 
-    ticket.status =
-        "closed";
+
+    ticket.closed =
+        true;
 
     ticket.closedAt =
         Date.now();
 
+    ticket.deletedBy =
+        member.id;
+
+    ticket.deletedAt =
+        Date.now();
+
+
+    const user =
+        getUserData(
+            guild.id,
+            member.id
+        );
+
+    const stats =
+        getStats(
+            guild.id,
+            member.id
+        );
+
+    user.ticketsClosed =
+        (user.ticketsClosed || 0) + 1;
+
+    stats.ticketsClosed =
+        (stats.ticketsClosed || 0) + 1;
+
+
     saveData();
 
+
     await sendLog(
-        channel.guild,
-        "🗑️ حذف تذكرة",
-        [
-            `🎫 التذكرة: ${channel}`,
-            `👤 بواسطة: ${member}`
-        ].join("\n"),
-        0xED4245
+        guild,
+        "🗑️ Ticket Deleted",
+        `تم حذف التذكرة <#${channel.id}> بواسطة ${member}.`,
+        0xE74C3C
     );
 
-    await channel.send(
-        "🗑️ سيتم حذف التذكرة..."
-    ).catch(() => {});
+
+    await channel.send({
+        embeds: [
+
+            new EmbedBuilder()
+                .setColor(0xE74C3C)
+                .setTitle(
+                    "🗑️ سيتم حذف التذكرة"
+                )
+                .setDescription(
+                    "سيتم حذف القناة خلال لحظات."
+                )
+                .setTimestamp()
+        ]
+    }).catch(() => {});
+
 
     setTimeout(
-        async () => {
+        () => {
 
-            await channel.delete(
+            channel.delete(
                 "حذف التذكرة"
             ).catch(() => {});
 
@@ -5186,545 +5859,690 @@ async function deleteTicket(
         1500
     );
 
-    return {
-
-        success: true,
-
-        message:
-            "🗑️ سيتم حذف التذكرة."
-
-    };
+    return true;
 }
 
 
-// ============================================================
-// TICKET RATING
-// ============================================================
+// ==================================================
+// SEND TICKET RATING
+// ==================================================
 
 async function sendTicketRating(
     guild,
     ticket
 ) {
 
-    if (
-        !ticket.ownerId
-    ) {
-        return;
-    }
-
-    if (
-        !ticket.claimedBy
-    ) {
-        return;
-    }
-
-    const owner =
-        await guild.members.fetch(
-            ticket.ownerId
-        ).catch(
-            () => null
-        );
-
-    if (!owner) {
-        return;
-    }
-
-    if (
-        !data.pendingRatings[
-            guild.id
-        ]
-    ) {
-
-        data.pendingRatings[
-            guild.id
-        ] = {};
-    }
-
-    data.pendingRatings[
-        guild.id
-    ][ticket.id] = {
-
-        ticketId:
-            ticket.id,
-
-        guildId:
-            guild.id,
-
-        ownerId:
-            ticket.ownerId,
-
-        claimerId:
-            ticket.claimedBy,
-
-        createdAt:
-            Date.now()
-
-    };
-
-    saveData();
-
-    const buttons = [];
-
-    for (
-        let stars = 1;
-        stars <= 5;
-        stars++
-    ) {
-
-        buttons.push(
-
-            new ButtonBuilder()
-                .setCustomId(
-                    `ticket_rating_${ticket.id}_${stars}`
-                )
-                .setLabel(
-                    `${stars}`
-                )
-                .setEmoji("⭐")
-                .setStyle(
-                    ButtonStyle.Secondary
-                )
-
-        );
-    }
-
-    const row =
-        new ActionRowBuilder()
-            .addComponents(
-                buttons
-            );
-
     try {
 
-        await owner.send({
+        if (
+            !ticket
+        ) {
+            return;
+        }
+
+        if (
+            !ticket.userId
+        ) {
+            return;
+        }
+
+        if (
+            !ticket.claimedBy
+        ) {
+            return;
+        }
+
+        const user =
+            await client.users.fetch(
+                ticket.userId
+            ).catch(
+                () => null
+            );
+
+        if (!user) {
+            return;
+        }
+
+        const pending =
+            getGuildPendingRatings(
+                guild.id
+            );
+
+        pending[ticket.id] = {
+
+            ticketId:
+                ticket.id,
+
+            userId:
+                ticket.userId,
+
+            claimerId:
+                ticket.claimedBy,
+
+            createdAt:
+                Date.now()
+        };
+
+        saveData();
+
+
+        const row =
+            new ActionRowBuilder()
+                .addComponents(
+
+                    new ButtonBuilder()
+                        .setCustomId(
+                            `ticket_rating_${ticket.id}_1`
+                        )
+                        .setLabel(
+                            "1"
+                        )
+                        .setEmoji(
+                            "⭐"
+                        )
+                        .setStyle(
+                            ButtonStyle.Danger
+                        ),
+
+                    new ButtonBuilder()
+                        .setCustomId(
+                            `ticket_rating_${ticket.id}_2`
+                        )
+                        .setLabel(
+                            "2"
+                        )
+                        .setEmoji(
+                            "⭐"
+                        )
+                        .setStyle(
+                            ButtonStyle.Danger
+                        ),
+
+                    new ButtonBuilder()
+                        .setCustomId(
+                            `ticket_rating_${ticket.id}_3`
+                        )
+                        .setLabel(
+                            "3"
+                        )
+                        .setEmoji(
+                            "⭐"
+                        )
+                        .setStyle(
+                            ButtonStyle.Secondary
+                        ),
+
+                    new ButtonBuilder()
+                        .setCustomId(
+                            `ticket_rating_${ticket.id}_4`
+                        )
+                        .setLabel(
+                            "4"
+                        )
+                        .setEmoji(
+                            "⭐"
+                        )
+                        .setStyle(
+                            ButtonStyle.Success
+                        ),
+
+                    new ButtonBuilder()
+                        .setCustomId(
+                            `ticket_rating_${ticket.id}_5`
+                        )
+                        .setLabel(
+                            "5"
+                        )
+                        .setEmoji(
+                            "⭐"
+                        )
+                        .setStyle(
+                            ButtonStyle.Success
+                        )
+                );
+
+
+        await user.send({
 
             embeds: [
 
                 new EmbedBuilder()
-                    .setColor(0xFEE75C)
+                    .setColor(0xF1C40F)
                     .setTitle(
                         "⭐ تقييم التذكرة"
                     )
                     .setDescription(
-                        `شكرًا لتواصلك معنا في **${guild.name}**.\n\n` +
-                        "قيّم خدمة الموظف الذي تعامل مع تذكرتك من 1 إلى 5."
+                        `تم إغلاق تذكرتك في **${guild.name}**.\n\nنرجو تقييم الموظف الذي استلم تذكرتك من 1 إلى 5 نجوم.`
                     )
                     .setTimestamp()
-
             ],
 
             components: [
                 row
             ]
 
-        });
+        }).catch(() => {});
 
-    } catch {}
+    } catch (error) {
+
+        console.error(
+            "Send Ticket Rating Error:",
+            error
+        );
+    }
 }
 
 
-// ============================================================
+// ==================================================
 // ADD TICKET RATING
-// ============================================================
+// ==================================================
 
 async function addTicketRating(
-    guildId,
+    guild,
     ticketId,
     stars,
     userId
 ) {
 
     const pending =
-        data.pendingRatings[
-            guildId
-        ]?.[ticketId];
+        getGuildPendingRatings(
+            guild.id
+        );
 
-    if (!pending) {
+    const request =
+        pending[ticketId];
 
-        return {
-            success: false,
-            message:
-                "❌ انتهت صلاحية تقييم هذه التذكرة."
-        };
+    if (!request) {
+
+        throw new Error(
+            "التقييم غير موجود أو انتهت صلاحيته."
+        );
     }
 
     if (
-        pending.ownerId !==
+        request.userId !==
         userId
     ) {
 
-        return {
-            success: false,
-            message:
-                "❌ هذا التقييم ليس خاصًا بك."
-        };
+        throw new Error(
+            "لا يمكنك استخدام هذا التقييم."
+        );
     }
 
-    stars =
+    const rating =
         Number(stars);
 
     if (
-        stars < 1 ||
-        stars > 5
+        !Number.isInteger(rating) ||
+        rating < 1 ||
+        rating > 5
     ) {
 
-        return {
-            success: false,
-            message:
-                "❌ التقييم غير صحيح."
-        };
+        throw new Error(
+            "التقييم غير صحيح."
+        );
     }
 
+
+    const ratings =
+        getGuildRatings(
+            guild.id
+        );
+
+    ratings[ticketId] = {
+
+        ticketId:
+            ticketId,
+
+        userId:
+            userId,
+
+        claimerId:
+            request.claimerId,
+
+        stars:
+            rating,
+
+        createdAt:
+            Date.now()
+    };
+
+
+    // ----------------------------------------------
+    // STAFF STATS
+    // ----------------------------------------------
+
+    const claimer =
+        getUserData(
+            guild.id,
+            request.claimerId
+        );
+
+    const stats =
+        getStats(
+            guild.id,
+            request.claimerId
+        );
+
+    stats.ratings =
+        (stats.ratings || 0) + 1;
+
+
     if (
-        !data.ratings[guildId]
+        rating >= 4
     ) {
 
-        data.ratings[guildId] =
-            [];
-    }
+        claimer.goodRatings =
+            (claimer.goodRatings || 0) + 1;
 
-    data.ratings[guildId]
-        .push({
-
-            ticketId:
-                ticketId,
-
-            ownerId:
-                pending.ownerId,
-
-            claimerId:
-                pending.claimerId,
-
-            stars:
-                stars,
-
-            createdAt:
-                Date.now()
-
-        });
-
-    // --------------------------------------------------------
-    // Good rating = +3 points
-    // --------------------------------------------------------
-
-    if (
-        stars >= 4
-    ) {
-
-        const user =
-            getUserData(
-                guildId,
-                pending.claimerId
-            );
-
-        user.goodRatings =
-            Number(
-                user.goodRatings || 0
-            ) + 1;
+        stats.goodRatings =
+            (stats.goodRatings || 0) + 1;
 
         addPoints(
-            guildId,
-            pending.claimerId,
+            guild.id,
+            request.claimerId,
             POINTS.goodRating
         );
     }
 
-    delete data.pendingRatings[
-        guildId
-    ][ticketId];
+
+    delete pending[ticketId];
 
     saveData();
 
-    return {
 
-        success: true,
+    await sendLog(
+        guild,
+        "⭐ Ticket Rating",
+        `تم تقييم التذكرة **${ticketId}** بـ **${rating}/5** نجوم.\n**الموظف:** <@${request.claimerId}>\n**العضو:** <@${userId}>`,
+        rating >= 4
+            ? 0x2ECC71
+            : 0xF1C40F
+    );
 
-        message:
-            `⭐ تم تسجيل تقييمك: **${stars}/5**.`
-
-    };
+    return rating;
 }
 
 
-// ============================================================
+// ==================================================
 // END PART 3
-// ============================================================
 // ==================================================
-// PART 4 — BUTTONS + PREFIX + EVENTS + XP + ANTISPAM
 // ==================================================
-
-
-// ==================================================
-// TICKET BUTTONS
+// PART 4 - BUTTONS / PREFIX / ANTI-SPAM / XP / WELCOME / LOGIN
 // ==================================================
 
-client.on("interactionCreate", async (interaction) => {
-    try {
-        if (!interaction.isButton()) return;
 
-        if (!interaction.guild) {
-            if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({
-                    content: "❌ هذا النظام يعمل داخل السيرفر فقط.",
-                    ephemeral: true
-                });
-            }
-            return;
-        }
+// ==================================================
+// BUTTON INTERACTIONS
+// ==================================================
 
-        // ==============================================
-        // OPEN TICKET
-        // ==============================================
+client.on(
+    "interactionCreate",
+    async (interaction) => {
 
-        if (interaction.customId.startsWith("open_ticket_")) {
-            const panelId = interaction.customId.replace(
-                "open_ticket_",
-                ""
-            );
-
-            await createTicket(interaction, panelId);
-            return;
-        }
-
-
-        // ==============================================
-        // CLAIM TICKET
-        // ==============================================
-
-        if (interaction.customId === "ticket_claim") {
-
-            const ticket = findTicketByChannel(
-                interaction.guild.id,
-                interaction.channel.id
-            );
-
-            if (!ticket) {
-                return interaction.reply({
-                    content: "❌ هذه القناة ليست تذكرة.",
-                    ephemeral: true
-                });
-            }
-
-            await interaction.deferReply({
-                ephemeral: true
-            });
-
-            try {
-
-                await claimTicket(
-                    interaction.channel,
-                    interaction.member
-                );
-
-                await interaction.editReply({
-                    content: "✅ تم استلام التذكرة بنجاح."
-                });
-
-            } catch (error) {
-
-                await interaction.editReply({
-                    content: `❌ ${error.message}`
-                });
-            }
-
-            return;
-        }
-
-
-        // ==============================================
-        // UNCLAIM TICKET
-        // ==============================================
-
-        if (interaction.customId === "ticket_unclaim") {
-
-            const ticket = findTicketByChannel(
-                interaction.guild.id,
-                interaction.channel.id
-            );
-
-            if (!ticket) {
-                return interaction.reply({
-                    content: "❌ هذه القناة ليست تذكرة.",
-                    ephemeral: true
-                });
-            }
-
-            await interaction.deferReply({
-                ephemeral: true
-            });
-
-            try {
-
-                await unclaimTicket(
-                    interaction.channel,
-                    interaction.member
-                );
-
-                await interaction.editReply({
-                    content: "✅ تم إلغاء استلام التذكرة."
-                });
-
-            } catch (error) {
-
-                await interaction.editReply({
-                    content: `❌ ${error.message}`
-                });
-            }
-
-            return;
-        }
-
-
-        // ==============================================
-        // CLOSE TICKET
-        // ==============================================
-
-        if (interaction.customId === "ticket_close") {
-
-            const ticket = findTicketByChannel(
-                interaction.guild.id,
-                interaction.channel.id
-            );
-
-            if (!ticket) {
-                return interaction.reply({
-                    content: "❌ هذه القناة ليست تذكرة.",
-                    ephemeral: true
-                });
-            }
-
-            await interaction.deferReply({
-                ephemeral: true
-            });
-
-            try {
-
-                await closeTicket(
-                    interaction.channel,
-                    interaction.member
-                );
-
-                await interaction.editReply({
-                    content: "✅ تم إغلاق التذكرة."
-                });
-
-            } catch (error) {
-
-                await interaction.editReply({
-                    content: `❌ ${error.message}`
-                });
-            }
-
-            return;
-        }
-
-
-        // ==============================================
-        // TICKET RATING
-        // ==============================================
-
-        if (
-            interaction.customId.startsWith(
-                "ticket_rating_"
-            )
-        ) {
-
-            const parts =
-                interaction.customId.split("_");
-
-            const ticketId = parts[2];
-            const stars = Number(parts[3]);
+        try {
 
             if (
-                !ticketId ||
-                !Number.isInteger(stars) ||
-                stars < 1 ||
-                stars > 5
+                !interaction.isButton()
             ) {
-                return interaction.reply({
-                    content: "❌ التقييم غير صالح.",
-                    ephemeral: true
-                });
+                return;
             }
 
-            await interaction.deferReply({
-                ephemeral: true
-            });
 
-            try {
+            // ==============================================
+            // OPEN TICKET
+            // ==============================================
 
-                await addTicketRating(
-                    interaction.guild,
-                    ticketId,
-                    stars,
-                    interaction.user.id
-                );
+            if (
+                interaction.customId.startsWith(
+                    "open_ticket_"
+                )
+            ) {
 
-                await interaction.editReply({
+                const panelId =
+                    interaction.customId.replace(
+                        "open_ticket_",
+                        ""
+                    );
+
+                try {
+
+                    const channel =
+                        await createTicket(
+                            interaction,
+                            panelId
+                        );
+
+                    return interaction.reply({
+                        content:
+                            `✅ تم إنشاء تذكرتك: ${channel}`,
+                        ephemeral: true
+                    });
+
+                } catch (error) {
+
+                    return interaction.reply({
+                        content:
+                            `❌ ${error.message}`,
+                        ephemeral: true
+                    });
+                }
+            }
+
+
+            // ==============================================
+            // CLAIM TICKET
+            // ==============================================
+
+            if (
+                interaction.customId ===
+                "ticket_claim"
+            ) {
+
+                if (
+                    !interaction.guild ||
+                    !interaction.channel
+                ) {
+                    return interaction.reply({
+                        content:
+                            "❌ هذا الزر يعمل داخل السيرفر فقط.",
+                        ephemeral: true
+                    });
+                }
+
+                try {
+
+                    await claimTicket(
+                        interaction.channel,
+                        interaction.member
+                    );
+
+                    return interaction.reply({
+                        content:
+                            "✅ تم استلام التذكرة بنجاح.",
+                        ephemeral: true
+                    });
+
+                } catch (error) {
+
+                    return interaction.reply({
+                        content:
+                            `❌ ${error.message}`,
+                        ephemeral: true
+                    });
+                }
+            }
+
+
+            // ==============================================
+            // UNCLAIM TICKET
+            // ==============================================
+
+            if (
+                interaction.customId ===
+                "ticket_unclaim"
+            ) {
+
+                if (
+                    !interaction.guild ||
+                    !interaction.channel
+                ) {
+                    return interaction.reply({
+                        content:
+                            "❌ هذا الزر يعمل داخل السيرفر فقط.",
+                        ephemeral: true
+                    });
+                }
+
+                try {
+
+                    await unclaimTicket(
+                        interaction.channel,
+                        interaction.member
+                    );
+
+                    return interaction.reply({
+                        content:
+                            "✅ تم ترك التذكرة.",
+                        ephemeral: true
+                    });
+
+                } catch (error) {
+
+                    return interaction.reply({
+                        content:
+                            `❌ ${error.message}`,
+                        ephemeral: true
+                    });
+                }
+            }
+
+
+            // ==============================================
+            // CLOSE TICKET
+            // ==============================================
+
+            if (
+                interaction.customId ===
+                "ticket_close"
+            ) {
+
+                if (
+                    !interaction.guild ||
+                    !interaction.channel
+                ) {
+                    return interaction.reply({
+                        content:
+                            "❌ هذا الزر يعمل داخل السيرفر فقط.",
+                        ephemeral: true
+                    });
+                }
+
+                try {
+
+                    await closeTicket(
+                        interaction.channel,
+                        interaction.member
+                    );
+
+                    if (
+                        !interaction.replied &&
+                        !interaction.deferred
+                    ) {
+
+                        return interaction.reply({
+                            content:
+                                "🔒 تم إغلاق التذكرة.",
+                            ephemeral: true
+                        });
+                    }
+
+                } catch (error) {
+
+                    return interaction.reply({
+                        content:
+                            `❌ ${error.message}`,
+                        ephemeral: true
+                    });
+                }
+            }
+
+
+            // ==============================================
+            // TICKET RATING
+            // ==============================================
+
+            if (
+                interaction.customId.startsWith(
+                    "ticket_rating_"
+                )
+            ) {
+
+                const parts =
+                    interaction.customId.split(
+                        "_"
+                    );
+
+                if (
+                    parts.length < 4
+                ) {
+                    return interaction.reply({
+                        content:
+                            "❌ زر التقييم غير صحيح.",
+                        ephemeral: true
+                    });
+                }
+
+                const stars =
+                    Number(
+                        parts[parts.length - 1]
+                    );
+
+                const ticketId =
+                    parts
+                        .slice(
+                            2,
+                            parts.length - 1
+                        )
+                        .join("_");
+
+                if (
+                    !Number.isInteger(stars) ||
+                    stars < 1 ||
+                    stars > 5
+                ) {
+
+                    return interaction.reply({
+                        content:
+                            "❌ التقييم غير صحيح.",
+                        ephemeral: true
+                    });
+                }
+
+                try {
+
+                    const rating =
+                        await addTicketRating(
+                            interaction.guild,
+                            ticketId,
+                            stars,
+                            interaction.user.id
+                        );
+
+                    return interaction.reply({
+                        content:
+                            `⭐ تم تسجيل تقييمك: **${rating}/5**. شكرًا لك!`,
+                        ephemeral: true
+                    });
+
+                } catch (error) {
+
+                    return interaction.reply({
+                        content:
+                            `❌ ${error.message}`,
+                        ephemeral: true
+                    });
+                }
+            }
+
+        } catch (error) {
+
+            console.error(
+                "Button Interaction Error:",
+                error
+            );
+
+            if (
+                interaction.replied ||
+                interaction.deferred
+            ) {
+
+                await interaction.followUp({
                     content:
-                        `⭐ تم تسجيل تقييمك: ${stars}/5`
-                });
+                        "❌ حدث خطأ أثناء تنفيذ الزر.",
+                    ephemeral: true
+                }).catch(() => {});
 
-            } catch (error) {
+            } else {
 
-                await interaction.editReply({
-                    content: `❌ ${error.message}`
-                });
+                await interaction.reply({
+                    content:
+                        "❌ حدث خطأ أثناء تنفيذ الزر.",
+                    ephemeral: true
+                }).catch(() => {});
             }
-
-            return;
-        }
-
-    } catch (error) {
-
-        console.error(
-            "Button Interaction Error:",
-            error
-        );
-
-        if (
-            interaction.isRepliable() &&
-            !interaction.replied &&
-            !interaction.deferred
-        ) {
-            await interaction.reply({
-                content:
-                    "❌ حدث خطأ أثناء تنفيذ العملية.",
-                ephemeral: true
-            }).catch(() => {});
         }
     }
-});
+);
 
 
 // ==================================================
-// PREFIX COMMAND HELPERS
+// PREFIX PARSER
 // ==================================================
 
-function parsePrefixArguments(content) {
+function parsePrefixArguments(
+    content
+) {
 
-    const args = content.trim().split(/\s+/);
+    if (!content) {
+        return {
+            command: "",
+            args: []
+        };
+    }
 
-    const command = args.shift()?.toLowerCase();
+    const parts =
+        content
+            .trim()
+            .split(/\s+/);
+
+    const command =
+        (parts.shift() || "")
+            .toLowerCase();
 
     return {
         command,
-        args
+        args: parts
     };
 }
 
 
-function findDurationInArgs(args) {
+// ==================================================
+// FIND DURATION IN PREFIX ARGS
+// ==================================================
 
-    for (let i = 0; i < args.length; i++) {
+function findDurationInArgs(
+    args
+) {
 
-        const parsed = parseDuration(args[i]);
+    if (
+        !Array.isArray(args)
+    ) {
+        return null;
+    }
+
+    for (
+        let i = 0;
+        i < args.length;
+        i++
+    ) {
+
+        const parsed =
+            parseDuration(
+                args[i]
+            );
 
         if (parsed) {
 
             return {
-                duration: args[i],
-                index: i
+                duration:
+                    args[i],
+
+                index:
+                    i,
+
+                milliseconds:
+                    parsed.milliseconds
             };
         }
     }
@@ -5733,867 +6551,1045 @@ function findDurationInArgs(args) {
 }
 
 
-function getReasonWithoutDuration(args, durationIndex) {
+// ==================================================
+// GET REASON WITHOUT DURATION
+// ==================================================
 
-    const filtered = args.filter(
-        (_, index) => index !== durationIndex
+function getReasonWithoutDuration(
+    args,
+    durationIndex
+) {
+
+    if (
+        !Array.isArray(args)
+    ) {
+        return "";
+    }
+
+    return args
+        .filter(
+            (_, index) =>
+                index !== durationIndex
+        )
+        .join(" ")
+        .trim();
+}
+
+
+// ==================================================
+// PREFIX TARGET
+// ==================================================
+
+async function getPrefixTarget(
+    message,
+    input
+) {
+
+    if (!input) {
+
+        return null;
+    }
+
+    return resolveMember(
+        message.guild,
+        input
     );
-
-    return filtered.join(" ").trim();
-}
-
-
-async function getPrefixTarget(message, value) {
-
-    if (!value) return null;
-
-    if (message.mentions.members.size > 0) {
-
-        const first =
-            message.mentions.members.first();
-
-        if (first) return first;
-    }
-
-    const cleanId =
-        value.replace(/[<@!>]/g, "");
-
-    if (/^\d{17,20}$/.test(cleanId)) {
-
-        return await message.guild.members
-            .fetch(cleanId)
-            .catch(() => null);
-    }
-
-    return null;
-}
-
-
-function prefixError(message, text) {
-
-    return message.reply({
-        content: `❌ ${text}`
-    });
-}
-
-
-async function sendPrefixResult(message, text) {
-
-    return message.reply({
-        content: text
-    });
 }
 
 
 // ==================================================
-// PREFIX COMMANDS
+// PREFIX COMMAND HANDLER
 // ==================================================
 
-client.on("messageCreate", async (message) => {
+client.on(
+    "messageCreate",
+    async (message) => {
 
-    try {
+        try {
 
-        if (!message.guild) return;
+            if (!message.guild) {
+                return;
+            }
 
-        if (message.author.bot) return;
+            if (message.author.bot) {
+                return;
+            }
 
-        const content =
-            message.content.trim();
+            const content =
+                message.content.trim();
 
-        if (!content.startsWith(PREFIX)) {
-            return;
-        }
+            if (!content) {
+                return;
+            }
 
-        const withoutPrefix =
-            content.slice(PREFIX.length).trim();
+            // لازم يبدأ بـ $
+            if (
+                !content.startsWith(
+                    PREFIX
+                )
+            ) {
+                return;
+            }
 
-        if (!withoutPrefix) return;
+            const withoutPrefix =
+                content.slice(
+                    PREFIX.length
+                ).trim();
 
-        const parsed =
-            parsePrefixArguments(withoutPrefix);
+            if (!withoutPrefix) {
+                return;
+            }
 
-        const command =
-            parsed.command;
+            const {
+                command,
+                args
+            } =
+                parsePrefixArguments(
+                    withoutPrefix
+                );
 
-        const args =
-            parsed.args;
+            if (!command) {
+                return;
+            }
 
 
-        // ==============================================
-        // HELP
-        // ==============================================
+            // ==============================================
+            // HELP
+            // ==============================================
 
-        if (
-            [
-                "help",
-                "مساعدة",
-                "مساعده"
-            ].includes(command)
-        ) {
+            if (
+                [
+                    "help",
+                    "مساعدة",
+                    "اوامر",
+                    "أوامر"
+                ].includes(command)
+            ) {
 
-            return message.reply({
-                embeds: [
+                const embed =
                     new EmbedBuilder()
                         .setColor(0x5865F2)
-                        .setTitle("📚 أوامر البوت")
-                        .setDescription(
-                            [
-                                "**🛡️ الإدارة**",
-                                "`$ban @member [reason]`",
-                                "`$unban USER_ID [reason]`",
-                                "`$warn @member duration reason`",
-                                "`$ت @member duration reason`",
-                                "`$warning @member duration reason`",
-                                "`$تحذير @member duration reason`",
-                                "`$timeout @member duration reason`",
-                                "`$تايم @member duration reason`",
-                                "`$jail @member duration reason`",
-                                "`$سجن @member duration reason`",
-                                "",
-                                "**🎫 التذاكر**",
-                                "`$close` / `$قفل`",
-                                "`$delete` / `$حذف`",
-                                "",
-                                "**📊 النقاط والإحصائيات**",
-                                "`$points [@member]`",
-                                "`$xp [@member]`",
-                                "`$stats [@member]`",
-                                "`$time [@member]`",
-                                "",
-                                "**💰 الاقتصاد**",
-                                "`$balance [@member]`",
-                                "`$pay @member amount`",
-                                "",
-                                "يمكن استخدام جميع الأوامر الأساسية أيضًا من خلال `/`."
-                            ].join("\n")
-                        )
-                        .setFooter({
-                            text: "Professional Discord Bot"
-                        })
-                ]
-            });
-        }
-
-
-        // ==============================================
-        // CLOSE TICKET
-        // ==============================================
-
-        if (
-            [
-                "close",
-                "قفل"
-            ].includes(command)
-        ) {
-
-            if (
-                !findTicketByChannel(
-                    message.guild.id,
-                    message.channel.id
-                )
-            ) {
-                return prefixError(
-                    message,
-                    "هذه القناة ليست تذكرة."
-                );
-            }
-
-            try {
-
-                await closeTicket(
-                    message.channel,
-                    message.member
-                );
-
-                return;
-
-            } catch (error) {
-
-                return prefixError(
-                    message,
-                    error.message
-                );
-            }
-        }
-
-
-        // ==============================================
-        // DELETE TICKET
-        // ==============================================
-
-        if (
-            [
-                "delete",
-                "حذف"
-            ].includes(command)
-        ) {
-
-            if (
-                !findTicketByChannel(
-                    message.guild.id,
-                    message.channel.id
-                )
-            ) {
-                return prefixError(
-                    message,
-                    "هذه القناة ليست تذكرة."
-                );
-            }
-
-            try {
-
-                await deleteTicket(
-                    message.channel,
-                    message.member
-                );
-
-                return;
-
-            } catch (error) {
-
-                return prefixError(
-                    message,
-                    error.message
-                );
-            }
-        }
-
-
-        // ==============================================
-        // BAN
-        // ==============================================
-
-        if (
-            [
-                "ban",
-                "حظر"
-            ].includes(command)
-        ) {
-
-            if (
-                !message.member.permissions.has(
-                    PermissionsBitField.Flags.BanMembers
-                ) &&
-                getStaffLevel(
-                    message.member,
-                    getGuildData(message.guild.id)
-                ) < 1
-            ) {
-                return prefixError(
-                    message,
-                    "ليس لديك صلاحية استخدام الأمر."
-                );
-            }
-
-            const target =
-                await getPrefixTarget(
-                    message,
-                    args[0]
-                );
-
-            if (!target) {
-                return prefixError(
-                    message,
-                    "استخدم: `$ban @العضو السبب`"
-                );
-            }
-
-            const reason =
-                args
-                    .slice(1)
-                    .join(" ") ||
-                "No reason provided";
-
-            const guildData =
-                getGuildData(
-                    message.guild.id
-                );
-
-            if (
-                !canModerateTarget(
-                    message.member,
-                    target,
-                    guildData
-                )
-            ) {
-                return prefixError(
-                    message,
-                    "لا يمكنك تنفيذ الأمر على هذا العضو بسبب مستوى الإدارة."
-                );
-            }
-
-            try {
-
-                await executeBan(
-                    message.guild,
-                    target,
-                    message.member,
-                    reason
-                );
-
-                return sendPrefixResult(
-                    message,
-                    `🔨 تم حظر ${target} بنجاح.`
-                );
-
-            } catch (error) {
-
-                return prefixError(
-                    message,
-                    error.message
-                );
-            }
-        }
-
-
-        // ==============================================
-        // WARN
-        // ==============================================
-
-        if (
-            [
-                "warn",
-                "warning",
-                "ت",
-                "تحذير"
-            ].includes(command)
-        ) {
-
-            const guildData =
-                getGuildData(
-                    message.guild.id
-                );
-
-            if (
-                getStaffLevel(
-                    message.member,
-                    guildData
-                ) < 1
-            ) {
-                return prefixError(
-                    message,
-                    "ليس لديك صلاحية إعطاء تحذير."
-                );
-            }
-
-            const target =
-                await getPrefixTarget(
-                    message,
-                    args[0]
-                );
-
-            if (!target) {
-                return prefixError(
-                    message,
-                    "استخدم: `$warn @العضو 30m السبب`"
-                );
-            }
-
-            if (
-                !canModerateTarget(
-                    message.member,
-                    target,
-                    guildData
-                )
-            ) {
-                return prefixError(
-                    message,
-                    "لا يمكنك تحذير هذا العضو بسبب مستوى الإدارة."
-                );
-            }
-
-            const remainingArgs =
-                args.slice(1);
-
-            const durationData =
-                findDurationInArgs(
-                    remainingArgs
-                );
-
-            if (!durationData) {
-                return prefixError(
-                    message,
-                    "يجب تحديد مدة مثل `30m` أو `1h`."
-                );
-            }
-
-            const duration =
-                durationData.duration;
-
-            const reason =
-                getReasonWithoutDuration(
-                    remainingArgs,
-                    durationData.index
-                ) ||
-                "لم يتم تحديد سبب.";
-
-            try {
-
-                await executeWarn(
-                    message.guild,
-                    target,
-                    message.member,
-                    reason,
-                    duration
-                );
-
-                return sendPrefixResult(
-                    message,
-                    `⚠️ تم تحذير ${target} لمدة ${duration}.`
-                );
-
-            } catch (error) {
-
-                return prefixError(
-                    message,
-                    error.message
-                );
-            }
-        }
-
-
-        // ==============================================
-        // TIMEOUT
-        // ==============================================
-
-        if (
-            [
-                "timeout",
-                "تايم",
-                "تايم اوت",
-                "timeoutmember"
-            ].includes(command)
-        ) {
-
-            const guildData =
-                getGuildData(
-                    message.guild.id
-                );
-
-            if (
-                getStaffLevel(
-                    message.member,
-                    guildData
-                ) < 1
-            ) {
-                return prefixError(
-                    message,
-                    "ليس لديك صلاحية إعطاء تايم أوت."
-                );
-            }
-
-            const target =
-                await getPrefixTarget(
-                    message,
-                    args[0]
-                );
-
-            if (!target) {
-                return prefixError(
-                    message,
-                    "استخدم: `$timeout @العضو 10m السبب`"
-                );
-            }
-
-            if (
-                !canModerateTarget(
-                    message.member,
-                    target,
-                    guildData
-                )
-            ) {
-                return prefixError(
-                    message,
-                    "لا يمكنك تنفيذ التايم أوت على هذا العضو."
-                );
-            }
-
-            const remainingArgs =
-                args.slice(1);
-
-            const durationData =
-                findDurationInArgs(
-                    remainingArgs
-                );
-
-            if (!durationData) {
-                return prefixError(
-                    message,
-                    "يجب تحديد مدة."
-                );
-            }
-
-            const duration =
-                durationData.duration;
-
-            const reason =
-                getReasonWithoutDuration(
-                    remainingArgs,
-                    durationData.index
-                ) ||
-                "لم يتم تحديد سبب.";
-
-            try {
-
-                await executeTimeout(
-                    message.guild,
-                    target,
-                    message.member,
-                    reason,
-                    duration
-                );
-
-                return sendPrefixResult(
-                    message,
-                    `⏱️ تم إعطاء ${target} تايم أوت لمدة ${duration}.`
-                );
-
-            } catch (error) {
-
-                return prefixError(
-                    message,
-                    error.message
-                );
-            }
-        }
-
-
-              // ==============================================
-        // JAIL
-        // ==============================================
-
-        if (
-            [
-                "jail",
-                "سجن"
-            ].includes(command)
-        ) {
-
-            const guildData =
-                getGuildData(
-                    message.guild.id
-                );
-
-            const level =
-                getStaffLevel(
-                    message.member,
-                    guildData
-                );
-
-            if (level < 3) {
-                return prefixError(
-                    message,
-                    "السجن متاح فقط للإدارة العليا والأونر."
-                );
-            }
-
-            const target =
-                await getPrefixTarget(
-                    message,
-                    args[0]
-                );
-
-            if (!target) {
-                return prefixError(
-                    message,
-                    "استخدم: `$jail @العضو 1h السبب`"
-                );
-            }
-
-            if (
-                !canModerateTarget(
-                    message.member,
-                    target,
-                    guildData
-                )
-            ) {
-                return prefixError(
-                    message,
-                    "لا يمكنك سجن هذا العضو بسبب مستوى الإدارة."
-                );
-            }
-
-            const remainingArgs =
-                args.slice(1);
-
-            const durationData =
-                findDurationInArgs(
-                    remainingArgs
-                );
-
-            if (!durationData) {
-                return prefixError(
-                    message,
-                    "يجب تحديد مدة السجن."
-                );
-            }
-
-            const duration =
-                durationData.duration;
-
-            const reason =
-                getReasonWithoutDuration(
-                    remainingArgs,
-                    durationData.index
-                ) ||
-                "لم يتم تحديد سبب.";
-
-            try {
-
-                await executeJail(
-                    message.guild,
-                    target,
-                    message.member,
-                    reason,
-                    duration
-                );
-
-                return sendPrefixResult(
-                    message,
-                    `🔒 تم سجن ${target} لمدة ${duration}.`
-                );
-
-            } catch (error) {
-
-                return prefixError(
-                    message,
-                    error.message
-                );
-            }
-        }
-
-
-        // ==============================================
-        // POINTS
-        // ==============================================
-
-        if (
-            [
-                "points",
-                "نقاط",
-                "نقاطي"
-            ].includes(command)
-        ) {
-
-            let target =
-                message.member;
-
-            if (args[0]) {
-
-                const resolved =
-                    await getPrefixTarget(
-                        message,
-                        args[0]
-                    );
-
-                if (resolved) {
-                    target = resolved;
-                }
-            }
-
-            const user =
-                getUserData(
-                    message.guild.id,
-                    target.id
-                );
-
-            const stats =
-                getStats(
-                    message.guild.id,
-                    target.id
-                );
-
-            return message.reply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setColor(0xF1C40F)
                         .setTitle(
-                            `⭐ نقاط ${target.displayName}`
+                            "🤖 أوامر البوت"
+                        )
+                        .setDescription(
+                            "جميع الأوامر تعمل باستخدام `$`."
                         )
                         .addFields(
+
                             {
-                                name: "🏆 نقاط الإجراءات",
-                                value: `${user.actionPoints || 0}`,
-                                inline: true
-                            },
-                            {
-                                name: "⚠️ التحذيرات",
-                                value: `${user.warnings || 0}`,
-                                inline: true
-                            },
-                            {
-                                name: "⏱️ التايم أوت",
-                                value: `${user.timeouts || 0}`,
-                                inline: true
-                            },
-                            {
-                                name: "🔒 السجن",
-                                value: `${user.jails || 0}`,
-                                inline: true
-                            },
-                            {
-                                name: "🎫 التذاكر المستلمة",
-                                value: `${user.ticketsClaimed || 0}`,
-                                inline: true
-                            },
-                            {
-                                name: "⭐ التقييمات الجيدة",
-                                value: `${user.goodRatings || 0}`,
-                                inline: true
-                            },
-                            {
-                                name: "📈 XP",
-                                value: `${user.xp || 0}`,
-                                inline: true
-                            },
-                            {
-                                name: "💰 الرصيد",
-                                value: `${user.coins || 0}`,
-                                inline: true
-                            },
-                            {
-                                name: "📊 إجمالي النقاط",
+                                name:
+                                    "🛡️ الإدارة",
                                 value:
-                                    `${stats.points || user.actionPoints || 0}`,
-                                inline: true
+                                    [
+                                        "`$ban @عضو السبب`",
+                                        "`$unban ID`",
+                                        "`$warn @عضو 1h السبب`",
+                                        "`$warning @عضو 1h السبب`",
+                                        "`$ت @عضو 1h السبب`",
+                                        "`$تحذير @عضو 1h السبب`",
+                                        "`$timeout @عضو 1h السبب`",
+                                        "`$تايم @عضو 1h السبب`",
+                                        "`$jail @عضو 1h السبب`",
+                                        "`$سجن @عضو 1h السبب`"
+                                    ].join("\n"),
+                                inline:
+                                    false
+                            },
+
+                            {
+                                name:
+                                    "🎫 التذاكر",
+                                value:
+                                    [
+                                        "`$close`",
+                                        "`$قفل`",
+                                        "`$delete`",
+                                        "`$حذف`"
+                                    ].join("\n"),
+                                inline:
+                                    true
+                            },
+
+                            {
+                                name:
+                                    "📊 المعلومات",
+                                value:
+                                    [
+                                        "`$points`",
+                                        "`$نقاط`",
+                                        "`$xp`",
+                                        "`$balance`",
+                                        "`$رصيد`",
+                                        "`$time`",
+                                        "`$مدة`"
+                                    ].join("\n"),
+                                inline:
+                                    true
+                            },
+
+                            {
+                                name:
+                                    "💰 الاقتصاد",
+                                value:
+                                    [
+                                        "`$pay @عضو 100`",
+                                        "`$تحويل @عضو 100`",
+                                        "`/balance`",
+                                        "`/pay`"
+                                    ].join("\n"),
+                                inline:
+                                    true
                             }
                         )
-                ]
-            });
-        }
+                        .setFooter({
+                            text:
+                                "Professional Discord Bot"
+                        })
+                        .setTimestamp();
+
+                return message.reply({
+                    embeds: [embed]
+                });
+            }
 
 
-        // ==============================================
-        // XP
-        // ==============================================
+            // ==============================================
+            // CLOSE
+            // ==============================================
 
-        if (
-            ["xp"].includes(command)
-        ) {
+            if (
+                [
+                    "close",
+                    "قفل"
+                ].includes(command)
+            ) {
 
-            let target =
-                message.member;
+                try {
 
-            if (args[0]) {
+                    await closeTicket(
+                        message.channel,
+                        message.member
+                    );
 
-                const resolved =
+                } catch (error) {
+
+                    return prefixError(
+                        message,
+                        error.message
+                    );
+                }
+
+                return;
+            }
+
+
+            // ==============================================
+            // DELETE
+            // ==============================================
+
+            if (
+                [
+                    "delete",
+                    "حذف"
+                ].includes(command)
+            ) {
+
+                try {
+
+                    await deleteTicket(
+                        message.channel,
+                        message.member
+                    );
+
+                } catch (error) {
+
+                    return prefixError(
+                        message,
+                        error.message
+                    );
+                }
+
+                return;
+            }
+
+
+            // ==============================================
+            // BAN
+            // ==============================================
+
+            if (
+                [
+                    "ban",
+                    "حظر"
+                ].includes(command)
+            ) {
+
+                const guildData =
+                    getGuildData(
+                        message.guild.id
+                    );
+
+                if (
+                    getStaffLevel(
+                        message.member,
+                        guildData
+                    ) <= 0
+                ) {
+
+                    return prefixError(
+                        message,
+                        "ليس لديك صلاحية استخدام هذا الأمر."
+                    );
+                }
+
+                const target =
                     await getPrefixTarget(
                         message,
                         args[0]
                     );
 
-                if (resolved) {
-                    target = resolved;
+                if (!target) {
+
+                    return prefixError(
+                        message,
+                        "استخدم: `$ban @العضو السبب`"
+                    );
+                }
+
+                if (
+                    !canModerateTarget(
+                        message.member,
+                        target,
+                        guildData
+                    )
+                ) {
+
+                    return prefixError(
+                        message,
+                        "لا يمكنك حظر هذا العضو بسبب مستوى الإدارة."
+                    );
+                }
+
+                const reason =
+                    args
+                        .slice(1)
+                        .join(" ")
+                        .trim() ||
+                    "لم يتم تحديد سبب.";
+
+                try {
+
+                    await executeBan(
+                        message.guild,
+                        target,
+                        message.member,
+                        reason
+                    );
+
+                    return sendPrefixResult(
+                        message,
+                        `🔨 تم حظر ${target}.`
+                    );
+
+                } catch (error) {
+
+                    return prefixError(
+                        message,
+                        error.message
+                    );
                 }
             }
 
-            const user =
-                getUserData(
-                    message.guild.id,
-                    target.id
-                );
 
-            return message.reply({
-                content:
-                    `📈 XP الخاص بـ ${target}: **${user.xp || 0}**`
-            });
-        }
+            // ==============================================
+            // UNBAN
+            // ==============================================
+
+            if (
+                [
+                    "unban",
+                    "فكحظر",
+                    "فك-حظر"
+                ].includes(command)
+            ) {
+
+                const guildData =
+                    getGuildData(
+                        message.guild.id
+                    );
+
+                if (
+                    getStaffLevel(
+                        message.member,
+                        guildData
+                    ) <= 0
+                ) {
+
+                    return prefixError(
+                        message,
+                        "ليس لديك صلاحية استخدام هذا الأمر."
+                    );
+                }
+
+                const userId =
+                    args[0];
+
+                if (
+                    !userId ||
+                    !/^\d{17,20}$/.test(
+                        userId
+                    )
+                ) {
+
+                    return prefixError(
+                        message,
+                        "استخدم: `$unban ID`"
+                    );
+                }
+
+                const reason =
+                    args
+                        .slice(1)
+                        .join(" ")
+                        .trim() ||
+                    "لم يتم تحديد سبب.";
+
+                try {
+
+                    await message.guild.bans.remove(
+                        userId,
+                        reason
+                    );
+
+                    await sendLog(
+                        message.guild,
+                        "🔓 Unban",
+                        `تم فك حظر <@${userId}> بواسطة ${message.member}\n**السبب:** ${reason}`,
+                        0x2ECC71
+                    );
+
+                    return sendPrefixResult(
+                        message,
+                        `✅ تم فك حظر <@${userId}>.`
+                    );
+
+                } catch (error) {
+
+                    return prefixError(
+                        message,
+                        error.message
+                    );
+                }
+            }
 
 
-        // ==============================================
-        // BALANCE
-        // ==============================================
+            // ==============================================
+            // WARN
+            // ==============================================
 
-        if (
-            [
-                "balance",
-                "bal",
-                "رصيد"
-            ].includes(command)
-        ) {
+            if (
+                [
+                    "warn",
+                    "warning",
+                    "ت",
+                    "تحذير"
+                ].includes(command)
+            ) {
 
-            let target =
-                message.member;
+                const guildData =
+                    getGuildData(
+                        message.guild.id
+                    );
 
-            if (args[0]) {
+                if (
+                    getStaffLevel(
+                        message.member,
+                        guildData
+                    ) <= 0
+                ) {
 
-                const resolved =
+                    return prefixError(
+                        message,
+                        "ليس لديك صلاحية استخدام التحذير."
+                    );
+                }
+
+                const target =
                     await getPrefixTarget(
                         message,
                         args[0]
                     );
 
-                if (resolved) {
-                    target = resolved;
+                if (!target) {
+
+                    return prefixError(
+                        message,
+                        "استخدم: `$warn @العضو 1h السبب`"
+                    );
+                }
+
+                if (
+                    !canModerateTarget(
+                        message.member,
+                        target,
+                        guildData
+                    )
+                ) {
+
+                    return prefixError(
+                        message,
+                        "لا يمكنك تحذير هذا العضو بسبب مستوى الإدارة."
+                    );
+                }
+
+                const remainingArgs =
+                    args.slice(1);
+
+                const durationData =
+                    findDurationInArgs(
+                        remainingArgs
+                    );
+
+                if (!durationData) {
+
+                    return prefixError(
+                        message,
+                        "يجب تحديد مدة التحذير. مثال: `1h`"
+                    );
+                }
+
+                const reason =
+                    getReasonWithoutDuration(
+                        remainingArgs,
+                        durationData.index
+                    ) ||
+                    "لم يتم تحديد سبب.";
+
+                try {
+
+                    await executeWarn(
+                        message.guild,
+                        target,
+                        message.member,
+                        reason,
+                        durationData.duration
+                    );
+
+                    return sendPrefixResult(
+                        message,
+                        `⚠️ تم تحذير ${target} لمدة **${durationData.duration}**.\n**السبب:** ${reason}`
+                    );
+
+                } catch (error) {
+
+                    return prefixError(
+                        message,
+                        error.message
+                    );
                 }
             }
 
-            const user =
-                getUserData(
-                    message.guild.id,
-                    target.id
-                );
 
-            const guildData =
-                getGuildData(
-                    message.guild.id
-                );
-
-            return message.reply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setColor(0x2ECC71)
-                        .setTitle("💰 الرصيد")
-                        .setDescription(
-                            `${target}\n\nالرصيد: **${user.coins || 0} ${guildData.currencyName || "Coins"}**`
-                        )
-                ]
-            });
-        }
-
-
-        // ==============================================
-        // PAY
-        // ==============================================
-
-        if (
-            [
-                "pay",
-                "تحويل"
-            ].includes(command)
-        ) {
-
-            const target =
-                await getPrefixTarget(
-                    message,
-                    args[0]
-                );
-
-            const amount =
-                Number(args[1]);
+            // ==============================================
+            // TIMEOUT
+            // ==============================================
 
             if (
-                !target ||
-                !Number.isInteger(amount) ||
-                amount <= 0
+                [
+                    "timeout",
+                    "تايم",
+                    "تايموت",
+                    "تايم-اوت"
+                ].includes(command)
             ) {
-                return prefixError(
-                    message,
-                    "استخدم: `$pay @العضو 100`"
-                );
+
+                const guildData =
+                    getGuildData(
+                        message.guild.id
+                    );
+
+                if (
+                    getStaffLevel(
+                        message.member,
+                        guildData
+                    ) <= 0
+                ) {
+
+                    return prefixError(
+                        message,
+                        "ليس لديك صلاحية استخدام التايم أوت."
+                    );
+                }
+
+                const target =
+                    await getPrefixTarget(
+                        message,
+                        args[0]
+                    );
+
+                if (!target) {
+
+                    return prefixError(
+                        message,
+                        "استخدم: `$تايم @العضو 1h السبب`"
+                    );
+                }
+
+                if (
+                    !canModerateTarget(
+                        message.member,
+                        target,
+                        guildData
+                    )
+                ) {
+
+                    return prefixError(
+                        message,
+                        "لا يمكنك إعطاء هذا العضو تايم أوت."
+                    );
+                }
+
+                const remainingArgs =
+                    args.slice(1);
+
+                const durationData =
+                    findDurationInArgs(
+                        remainingArgs
+                    );
+
+                if (!durationData) {
+
+                    return prefixError(
+                        message,
+                        "يجب تحديد مدة التايم أوت."
+                    );
+                }
+
+                const reason =
+                    getReasonWithoutDuration(
+                        remainingArgs,
+                        durationData.index
+                    ) ||
+                    "لم يتم تحديد سبب.";
+
+                try {
+
+                    await executeTimeout(
+                        message.guild,
+                        target,
+                        message.member,
+                        reason,
+                        durationData.duration
+                    );
+
+                    return sendPrefixResult(
+                        message,
+                        `⏱️ تم إعطاء ${target} تايم أوت لمدة **${durationData.duration}**.\n**السبب:** ${reason}`
+                    );
+
+                } catch (error) {
+
+                    return prefixError(
+                        message,
+                        error.message
+                    );
+                }
             }
+
+
+            // ==============================================
+            // JAIL
+            // ==============================================
 
             if (
-                target.id ===
-                message.author.id
+                [
+                    "jail",
+                    "سجن"
+                ].includes(command)
             ) {
-                return prefixError(
-                    message,
-                    "لا يمكنك تحويل الأموال لنفسك."
-                );
+
+                const guildData =
+                    getGuildData(
+                        message.guild.id
+                    );
+
+                const level =
+                    getStaffLevel(
+                        message.member,
+                        guildData
+                    );
+
+                if (
+                    level < 3
+                ) {
+
+                    return prefixError(
+                        message,
+                        "السجن متاح فقط للإدارة العليا والأونر."
+                    );
+                }
+
+                const target =
+                    await getPrefixTarget(
+                        message,
+                        args[0]
+                    );
+
+                if (!target) {
+
+                    return prefixError(
+                        message,
+                        "استخدم: `$jail @العضو 1h السبب`"
+                    );
+                }
+
+                if (
+                    !canModerateTarget(
+                        message.member,
+                        target,
+                        guildData
+                    )
+                ) {
+
+                    return prefixError(
+                        message,
+                        "لا يمكنك سجن هذا العضو بسبب مستوى الإدارة."
+                    );
+                }
+
+                const remainingArgs =
+                    args.slice(1);
+
+                const durationData =
+                    findDurationInArgs(
+                        remainingArgs
+                    );
+
+                if (!durationData) {
+
+                    return prefixError(
+                        message,
+                        "يجب تحديد مدة السجن."
+                    );
+                }
+
+                const reason =
+                    getReasonWithoutDuration(
+                        remainingArgs,
+                        durationData.index
+                    ) ||
+                    "لم يتم تحديد سبب.";
+
+                try {
+
+                    await executeJail(
+                        message.guild,
+                        target,
+                        message.member,
+                        reason,
+                        durationData.duration
+                    );
+
+                    return sendPrefixResult(
+                        message,
+                        `🔒 تم سجن ${target} لمدة **${durationData.duration}**.\n**السبب:** ${reason}`
+                    );
+
+                } catch (error) {
+
+                    return prefixError(
+                        message,
+                        error.message
+                    );
+                }
             }
 
-            try {
+
+            // ==============================================
+            // POINTS
+            // ==============================================
+
+            if (
+                [
+                    "points",
+                    "نقاط",
+                    "نقاطي"
+                ].includes(command)
+            ) {
+
+                let target =
+                    message.member;
+
+                if (args[0]) {
+
+                    const resolved =
+                        await getPrefixTarget(
+                            message,
+                            args[0]
+                        );
+
+                    if (resolved) {
+                        target = resolved;
+                    }
+                }
+
+                const user =
+                    getUserData(
+                        message.guild.id,
+                        target.id
+                    );
+
+                const stats =
+                    getStats(
+                        message.guild.id,
+                        target.id
+                    );
+
+                return message.reply({
+
+                    embeds: [
+
+                        new EmbedBuilder()
+                            .setColor(0xF1C40F)
+                            .setTitle(
+                                `⭐ نقاط ${target.displayName}`
+                            )
+                            .setThumbnail(
+                                target.user.displayAvatarURL({
+                                    size: 256
+                                })
+                            )
+                            .addFields(
+
+                                {
+                                    name:
+                                        "🏆 نقاط الإجراءات",
+                                    value:
+                                        `${user.actionPoints || 0}`,
+                                    inline:
+                                        true
+                                },
+
+                                {
+                                    name:
+                                        "⚠️ التحذيرات",
+                                    value:
+                                        `${user.warnings || 0}`,
+                                    inline:
+                                        true
+                                },
+
+                                {
+                                    name:
+                                        "⏱️ التايم أوت",
+                                    value:
+                                        `${user.timeouts || 0}`,
+                                    inline:
+                                        true
+                                },
+
+                                {
+                                    name:
+                                        "🔒 السجن",
+                                    value:
+                                        `${user.jails || 0}`,
+                                    inline:
+                                        true
+                                },
+
+                                {
+                                    name:
+                                        "🎫 التذاكر المستلمة",
+                                    value:
+                                        `${user.ticketsClaimed || 0}`,
+                                    inline:
+                                        true
+                                },
+
+                                {
+                                    name:
+                                        "⭐ التقييمات الجيدة",
+                                    value:
+                                        `${user.goodRatings || 0}`,
+                                    inline:
+                                        true
+                                },
+
+                                {
+                                    name:
+                                        "📈 XP",
+                                    value:
+                                        `${user.xp || 0}`,
+                                    inline:
+                                        true
+                                },
+
+                                {
+                                    name:
+                                        "💰 الرصيد",
+                                    value:
+                                        `${user.coins || 0}`,
+                                    inline:
+                                        true
+                                },
+
+                                {
+                                    name:
+                                        "📊 إجمالي النقاط",
+                                    value:
+                                        `${stats.points || user.actionPoints || 0}`,
+                                    inline:
+                                        true
+                                }
+                            )
+                            .setTimestamp()
+                    ]
+                });
+            }
+
+
+            // ==============================================
+            // XP
+            // ==============================================
+
+            if (
+                command ===
+                "xp"
+            ) {
+
+                let target =
+                    message.member;
+
+                if (args[0]) {
+
+                    const resolved =
+                        await getPrefixTarget(
+                            message,
+                            args[0]
+                        );
+
+                    if (resolved) {
+                        target = resolved;
+                    }
+                }
+
+                const user =
+                    getUserData(
+                        message.guild.id,
+                        target.id
+                    );
+
+                return message.reply({
+                    content:
+                        `📈 XP الخاص بـ ${target}: **${user.xp || 0}**`
+                });
+            }
+
+
+            // ==============================================
+            // BALANCE
+            // ==============================================
+
+            if (
+                [
+                    "balance",
+                    "bal",
+                    "رصيد"
+                ].includes(command)
+            ) {
+
+                let target =
+                    message.member;
+
+                if (args[0]) {
+
+                    const resolved =
+                        await getPrefixTarget(
+                            message,
+                            args[0]
+                        );
+
+                    if (resolved) {
+                        target = resolved;
+                    }
+                }
+
+                const user =
+                    getUserData(
+                        message.guild.id,
+                        target.id
+                    );
+
+                const guildData =
+                    getGuildData(
+                        message.guild.id
+                    );
+
+                return message.reply({
+
+                    embeds: [
+
+                        new EmbedBuilder()
+                            .setColor(0x2ECC71)
+                            .setTitle(
+                                "💰 الرصيد"
+                            )
+                            .setDescription(
+                                `${target}\n\nالرصيد: **${user.coins || 0} ${guildData.currencyName || "Coins"}**`
+                            )
+                            .setTimestamp()
+                    ]
+                });
+            }
+
+
+            // ==============================================
+            // PAY
+            // ==============================================
+
+            if (
+                [
+                    "pay",
+                    "تحويل"
+                ].includes(command)
+            ) {
+
+                const target =
+                    await getPrefixTarget(
+                        message,
+                        args[0]
+                    );
+
+                const amount =
+                    Number(
+                        args[1]
+                    );
+
+                if (
+                    !target ||
+                    !Number.isInteger(
+                        amount
+                    ) ||
+                    amount <= 0
+                ) {
+
+                    return prefixError(
+                        message,
+                        "استخدم: `$pay @العضو 100`"
+                    );
+                }
+
+                if (
+                    target.id ===
+                    message.author.id
+                ) {
+
+                    return prefixError(
+                        message,
+                        "لا يمكنك تحويل الأموال لنفسك."
+                    );
+                }
 
                 const sender =
                     getUserData(
@@ -6608,8 +7604,10 @@ client.on("messageCreate", async (message) => {
                     );
 
                 if (
-                    (sender.coins || 0) < amount
+                    (sender.coins || 0) <
+                    amount
                 ) {
+
                     return prefixError(
                         message,
                         "رصيدك غير كافي."
@@ -6626,100 +7624,95 @@ client.on("messageCreate", async (message) => {
 
                 saveData();
 
-                return sendPrefixResult(
-                    message,
-                    `💸 تم تحويل **${amount}** إلى ${target}.`
-                );
-
-            } catch (error) {
-
-                return prefixError(
-                    message,
-                    error.message
-                );
-            }
-        }
-
-
-        // ==============================================
-        // TIME / JAIL STATUS
-        // ==============================================
-
-        if (
-            [
-                "time",
-                "الوقت",
-                "مدة"
-            ].includes(command)
-        ) {
-
-            let target =
-                message.member;
-
-            if (args[0]) {
-
-                const resolved =
-                    await getPrefixTarget(
-                        message,
-                        args[0]
+                const guildData =
+                    getGuildData(
+                        message.guild.id
                     );
 
-                if (resolved) {
-                    target = resolved;
-                }
-            }
-
-            const jail =
-                getActiveJail(
-                    message.guild.id,
-                    target.id
-                );
-
-            if (!jail) {
                 return sendPrefixResult(
                     message,
-                    `ℹ️ ${target} ليس مسجونًا حاليًا.`
+                    `💸 تم تحويل **${amount} ${guildData.currencyName || "Coins"}** إلى ${target}.`
                 );
             }
 
-            const remaining =
-                Math.max(
-                    0,
-                    jail.expiresAt - Date.now()
+
+            // ==============================================
+            // TIME / JAIL STATUS
+            // ==============================================
+
+            if (
+                [
+                    "time",
+                    "الوقت",
+                    "مدة"
+                ].includes(command)
+            ) {
+
+                let target =
+                    message.member;
+
+                if (args[0]) {
+
+                    const resolved =
+                        await getPrefixTarget(
+                            message,
+                            args[0]
+                        );
+
+                    if (resolved) {
+                        target = resolved;
+                    }
+                }
+
+                const jail =
+                    getActiveJail(
+                        message.guild.id,
+                        target.id
+                    );
+
+                if (!jail) {
+
+                    return sendPrefixResult(
+                        message,
+                        `ℹ️ ${target} ليس مسجونًا حاليًا.`
+                    );
+                }
+
+                const remaining =
+                    Math.max(
+                        0,
+                        jail.expiresAt -
+                        Date.now()
+                    );
+
+                return sendPrefixResult(
+                    message,
+                    `🔒 ${target} مسجون.\n⏳ المتبقي: **${formatDuration(remaining)}**`
                 );
+            }
 
-            return sendPrefixResult(
-                message,
-                `🔒 ${target} مسجون.\n⏳ المتبقي: **${formatDuration(remaining)}**`
+            return;
+
+        } catch (error) {
+
+            console.error(
+                "Prefix Command Error:",
+                error
             );
-        }
 
+            if (
+                message.channel &&
+                message.channel.isTextBased()
+            ) {
 
-        // ==============================================
-        // UNKNOWN PREFIX COMMAND
-        // ==============================================
-
-        return;
-
-    } catch (error) {
-
-        console.error(
-            "Prefix Command Error:",
-            error
-        );
-
-        if (
-            message.channel &&
-            message.channel.isTextBased()
-        ) {
-
-            await message.reply({
-                content:
-                    "❌ حدث خطأ أثناء تنفيذ الأمر."
-            }).catch(() => {});
+                await message.reply({
+                    content:
+                        "❌ حدث خطأ أثناء تنفيذ الأمر."
+                }).catch(() => {});
+            }
         }
     }
-});
+);
 
 
 // ==================================================
@@ -6732,8 +7725,13 @@ client.on(
 
         try {
 
-            if (!message.guild) return;
-            if (message.author.bot) return;
+            if (!message.guild) {
+                return;
+            }
+
+            if (message.author.bot) {
+                return;
+            }
 
             const ticket =
                 findTicketByChannel(
@@ -6741,7 +7739,9 @@ client.on(
                     message.channel.id
                 );
 
-            if (!ticket) return;
+            if (!ticket) {
+                return;
+            }
 
             const guildData =
                 getGuildData(
@@ -6751,11 +7751,14 @@ client.on(
             const member =
                 message.member;
 
-            if (!member) return;
+            if (!member) {
+                return;
+            }
 
-            // صاحب التذكرة دائمًا مسموح
+            // صاحب التذكرة
             if (
-                ticket.userId === member.id
+                ticket.userId ===
+                member.id
             ) {
                 return;
             }
@@ -6767,7 +7770,9 @@ client.on(
                 );
 
             // عضو عادي
-            if (level <= 0) {
+            if (
+                level <= 0
+            ) {
 
                 await message.delete()
                     .catch(() => {});
@@ -6775,19 +7780,23 @@ client.on(
                 return;
             }
 
-            // غير مستلمة
-            if (!ticket.claimedBy) {
+            // التذكرة غير مستلمة
+            if (
+                !ticket.claimedBy
+            ) {
                 return;
             }
 
             // المستلم
             if (
-                ticket.claimedBy === member.id
+                ticket.claimedBy ===
+                member.id
             ) {
                 return;
             }
 
-            let claimerLevel = 0;
+            let claimerLevel =
+                0;
 
             try {
 
@@ -6804,12 +7813,14 @@ client.on(
 
             } catch {
 
-                claimerLevel = 0;
+                claimerLevel =
+                    0;
             }
 
-            // الأعلى فقط يستطيع الكتابة
+            // الإدارة الأعلى من المستلم مسموح لها
             if (
-                level > claimerLevel
+                level >
+                claimerLevel
             ) {
                 return;
             }
@@ -6828,8 +7839,10 @@ client.on(
 
                 setTimeout(
                     () => {
+
                         warning.delete()
                             .catch(() => {});
+
                     },
                     3000
                 );
@@ -6847,13 +7860,8 @@ client.on(
 
 
 // ==================================================
-// ANTI SPAM
+// ANTI-SPAM
 // ==================================================
-//
-// ملاحظة مهمة:
-// لا نستخدم اسم spamTracker حتى لا يحصل تعارض
-// مع أي تعريف موجود سابقًا في ملفك.
-//
 
 const antiSpamTracker =
     new Map();
@@ -6864,8 +7872,13 @@ client.on(
 
         try {
 
-            if (!message.guild) return;
-            if (message.author.bot) return;
+            if (!message.guild) {
+                return;
+            }
+
+            if (message.author.bot) {
+                return;
+            }
 
             const guildData =
                 getGuildData(
@@ -6883,13 +7896,18 @@ client.on(
                 `${message.guild.id}:${message.author.id}`;
 
             let record =
-                antiSpamTracker.get(key);
+                antiSpamTracker.get(
+                    key
+                );
 
             if (!record) {
 
                 record = {
+
                     messages: [],
+
                     lastContent: "",
+
                     warned: false
                 };
 
@@ -6909,7 +7927,8 @@ client.on(
             record.messages =
                 record.messages.filter(
                     item =>
-                        now - item.timestamp <=
+                        now -
+                        item.timestamp <=
                         windowTime
                 );
 
@@ -6918,14 +7937,22 @@ client.on(
                     .trim()
                     .toLowerCase();
 
-            if (!normalized.length) {
+            if (
+                !normalized
+            ) {
                 return;
             }
 
             record.messages.push({
-                id: message.id,
-                timestamp: now,
-                content: normalized
+
+                id:
+                    message.id,
+
+                timestamp:
+                    now,
+
+                content:
+                    normalized
             });
 
             const maxMessages =
@@ -6948,15 +7975,29 @@ client.on(
                     guildData.antiSpam.deleteMessages
                 ) {
 
+                    const uniqueMessageIds =
+                        [
+                            ...new Set(
+                                record.messages.map(
+                                    item =>
+                                        item.id
+                                )
+                            )
+                        ];
+
                     for (
-                        const item
-                        of record.messages
+                        const messageId
+                        of uniqueMessageIds
                     ) {
 
                         const msg =
                             await message.channel.messages
-                                .fetch(item.id)
-                                .catch(() => null);
+                                .fetch(
+                                    messageId
+                                )
+                                .catch(
+                                    () => null
+                                );
 
                         if (msg) {
 
@@ -6968,17 +8009,21 @@ client.on(
 
                 const warning =
                     await message.channel.send({
+
                         content:
                             `⛔ ${message.author} كفاية سبام! تم حذف رسائل السبام.`
-                    })
-                    .catch(() => null);
+                    }).catch(
+                        () => null
+                    );
 
                 if (warning) {
 
                     setTimeout(
                         () => {
+
                             warning.delete()
                                 .catch(() => {});
+
                         },
                         3000
                     );
@@ -6991,7 +8036,8 @@ client.on(
                     0xE74C3C
                 );
 
-                record.messages = [];
+                record.messages =
+                    [];
             }
 
         } catch (error) {
@@ -7015,8 +8061,13 @@ client.on(
 
         try {
 
-            if (!message.guild) return;
-            if (message.author.bot) return;
+            if (!message.guild) {
+                return;
+            }
+
+            if (message.author.bot) {
+                return;
+            }
 
             const user =
                 getUserData(
@@ -7025,19 +8076,23 @@ client.on(
                 );
 
             user.messages =
-                (user.messages || 0) + 1;
+                (user.messages || 0) +
+                1;
 
             const now =
                 Date.now();
 
-            // XP كل 30 ثانية
+            // XP مرة كل 30 ثانية
             if (
                 !user.lastXp ||
-                now - user.lastXp >= 30000
+                now -
+                user.lastXp >=
+                30000
             ) {
 
                 user.xp =
-                    (user.xp || 0) + 10;
+                    (user.xp || 0) +
+                    10;
 
                 user.lastXp =
                     now;
@@ -7050,7 +8105,8 @@ client.on(
                 );
 
             stats.messages =
-                (stats.messages || 0) + 1;
+                (stats.messages || 0) +
+                1;
 
             stats.xp =
                 user.xp || 0;
@@ -7095,18 +8151,23 @@ client.on(
                     guildData.welcomeChannelId
                 );
 
-            if (!channel) return;
+            if (!channel) {
+                return;
+            }
 
             const embed =
                 new EmbedBuilder()
                     .setColor(0x57F287)
-                    .setTitle("👋 عضو جديد!")
+                    .setTitle(
+                        "👋 عضو جديد!"
+                    )
                     .setDescription(
                         `أهلًا وسهلًا ${member} في **${member.guild.name}** 🎉\n\nنتمنى لك وقتًا ممتعًا معنا!`
                     )
                     .setThumbnail(
                         member.user.displayAvatarURL({
-                            size: 256
+                            size:
+                                256
                         })
                     )
                     .setFooter({
@@ -7116,7 +8177,8 @@ client.on(
                     .setTimestamp();
 
             await channel.send({
-                embeds: [embed]
+                embeds:
+                    [embed]
             });
 
         } catch (error) {
@@ -7157,24 +8219,30 @@ client.on(
                     guildData.goodbyeChannelId
                 );
 
-            if (!channel) return;
+            if (!channel) {
+                return;
+            }
 
             const embed =
                 new EmbedBuilder()
                     .setColor(0xED4245)
-                    .setTitle("👋 عضو غادر السيرفر")
+                    .setTitle(
+                        "👋 عضو غادر السيرفر"
+                    )
                     .setDescription(
                         `غادر **${member.user.tag}** السيرفر.`
                     )
                     .setThumbnail(
                         member.user.displayAvatarURL({
-                            size: 256
+                            size:
+                                256
                         })
                     )
                     .setTimestamp();
 
             await channel.send({
-                embeds: [embed]
+                embeds:
+                    [embed]
             });
 
         } catch (error) {
@@ -7236,7 +8304,9 @@ client.on(
 
         try {
 
-            if (!channel.guild) return;
+            if (!channel.guild) {
+                return;
+            }
 
             const tickets =
                 getGuildTickets(
@@ -7250,7 +8320,9 @@ client.on(
                         channel.id
                 );
 
-            if (index === -1) {
+            if (
+                index === -1
+            ) {
                 return;
             }
 
@@ -7284,7 +8356,8 @@ async function cleanupExpiredData() {
         const now =
             Date.now();
 
-        let changed = false;
+        let changed =
+            false;
 
 
         // ==============================================
@@ -7292,7 +8365,8 @@ async function cleanupExpiredData() {
         // ==============================================
 
         for (
-            const guildId of Object.keys(
+            const guildId
+            of Object.keys(
                 data.warnings || {}
             )
         ) {
@@ -7301,18 +8375,21 @@ async function cleanupExpiredData() {
                 data.warnings[guildId];
 
             for (
-                const userId of Object.keys(
+                const userId
+                of Object.keys(
                     guildWarnings || {}
                 )
             ) {
 
                 const list =
-                    guildWarnings[userId] || [];
+                    guildWarnings[userId] ||
+                    [];
 
                 const active =
                     list.filter(
                         warning =>
-                            warning.expiresAt > now
+                            warning.expiresAt >
+                            now
                     );
 
                 if (
@@ -7323,7 +8400,8 @@ async function cleanupExpiredData() {
                     guildWarnings[userId] =
                         active;
 
-                    changed = true;
+                    changed =
+                        true;
                 }
 
                 if (
@@ -7332,7 +8410,8 @@ async function cleanupExpiredData() {
 
                     delete guildWarnings[userId];
 
-                    changed = true;
+                    changed =
+                        true;
                 }
             }
         }
@@ -7343,7 +8422,8 @@ async function cleanupExpiredData() {
         // ==============================================
 
         for (
-            const guildId of Object.keys(
+            const guildId
+            of Object.keys(
                 data.jails || {}
             )
         ) {
@@ -7358,14 +8438,17 @@ async function cleanupExpiredData() {
             }
 
             const records =
-                data.jails[guildId] || [];
+                data.jails[guildId] ||
+                [];
 
             for (
-                const jail of [...records]
+                const jail
+                of [...records]
             ) {
 
                 if (
-                    jail.expiresAt <= now
+                    jail.expiresAt <=
+                    now
                 ) {
 
                     try {
@@ -7383,10 +8466,52 @@ async function cleanupExpiredData() {
                         );
                     }
 
-                    changed = true;
+                    changed =
+                        true;
                 }
             }
         }
+
+
+        // ==============================================
+        // OLD PENDING RATINGS CLEANUP
+        // ==============================================
+
+        for (
+            const guildId
+            of Object.keys(
+                data.pendingRatings || {}
+            )
+        ) {
+
+            const pending =
+                data.pendingRatings[guildId];
+
+            for (
+                const ticketId
+                of Object.keys(
+                    pending || {}
+                )
+            ) {
+
+                const request =
+                    pending[ticketId];
+
+                if (
+                    !request.createdAt ||
+                    now -
+                    request.createdAt >
+                    7 * 24 * 60 * 60 * 1000
+                ) {
+
+                    delete pending[ticketId];
+
+                    changed =
+                        true;
+                }
+            }
+        }
+
 
         if (changed) {
             saveData();
@@ -7426,7 +8551,8 @@ client.once(
                 await client.application.fetch();
 
             APPLICATION_OWNER_ID =
-                application.owner?.id || null;
+                application.owner?.id ||
+                null;
 
             client.user.setPresence({
 
@@ -7445,7 +8571,6 @@ client.once(
                     "online"
             });
 
-            // تسجيل أوامر Slash
             await registerSlashCommands();
 
             console.log(
@@ -7483,7 +8608,9 @@ client.once(
 // LOGIN
 // ==================================================
 
-if (!TOKEN) {
+if (
+    !TOKEN
+) {
 
     console.error(
         "❌ DISCORD_TOKEN غير موجود في Environment Variables."
@@ -7492,7 +8619,9 @@ if (!TOKEN) {
     process.exit(1);
 }
 
-client.login(TOKEN)
+client.login(
+    TOKEN
+)
     .then(() => {
 
         console.log(
