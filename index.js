@@ -335,12 +335,53 @@ function getGuildData(
     // TICKETS
     // ----------------------------------------------
 
-    if (
-        guildData.ticketCategoryId === undefined
-    ) {
-        guildData.ticketCategoryId = null;
-    }
+   if (
+    guildData.ticketCategoryId === undefined
+) {
+    guildData.ticketCategoryId = "1547161871671496735";
+}
 
+if (
+    guildData.ticketArchiveLogChannelId === undefined
+) {
+    guildData.ticketArchiveLogChannelId = "1547162275771850753";
+}
+
+if (
+    guildData.leaveLogChannelId === undefined
+) {
+    guildData.leaveLogChannelId = "1547162570165715006";
+}
+
+if (
+    guildData.joinLogChannelId === undefined
+) {
+    guildData.joinLogChannelId = "1547162573495861258";
+}
+
+if (
+    guildData.moderationLogChannelId === undefined
+) {
+    guildData.moderationLogChannelId = "1547162291571654706";
+}
+
+if (
+    guildData.jailLogChannelId === undefined
+) {
+    guildData.jailLogChannelId = "1547162643767238706";
+}
+
+if (
+    guildData.inviteLogChannelId === undefined
+) {
+    guildData.inviteLogChannelId = "1547162577035862056";
+}
+
+if (
+    guildData.jailRoleId === undefined
+) {
+    guildData.jailRoleId = "1547161772174221392";
+}
 
     // ----------------------------------------------
     // JAIL
@@ -1617,33 +1658,8 @@ function isTextChannel(
 
 const slashCommands = [
     new SlashCommandBuilder()
-    .setName("setup-ticket-panel")
-    .setDescription("إنشاء بانل تذاكر")
-    .addStringOption(option =>
-        option
-            .setName("name")
-            .setDescription("اسم البانل")
-            .setRequired(true)
-    )
-    .addStringOption(option =>
-        option
-            .setName("description")
-            .setDescription("وصف البانل")
-            .setRequired(false)
-    )
-    .addStringOption(option =>
-        option
-            .setName("button")
-            .setDescription("اسم زر فتح التذكرة")
-            .setRequired(false)
-    )
-    .addChannelOption(option =>
-        option
-            .setName("category")
-            .setDescription("كاتيجوري التذاكر")
-            .addChannelTypes(ChannelType.GuildCategory)
-            .setRequired(true)
-    ),
+    .setName("panel")
+    .setDescription("إنشاء بانل تذاكر"),
 
     // ----------------------------------------------
     // HELP
@@ -1998,36 +2014,10 @@ const slashCommands = [
     // SETUP TICKET PANEL
     // ----------------------------------------------
 
-    new SlashCommandBuilder()
-        .setName("setup-ticket-panel")
-        .setDescription("إنشاء بانل تذاكر")
-        .addStringOption(option =>
-            option
-                .setName("name")
-                .setDescription("اسم البانل")
-                .setRequired(true)
-        )
-        .addStringOption(option =>
-            option
-                .setName("description")
-                .setDescription("وصف البانل")
-                .setRequired(false)
-        )
-        .addStringOption(option =>
-            option
-                .setName("button")
-                .setDescription("اسم الزر")
-                .setRequired(false)
-        )
-        .addChannelOption(option =>
-            option
-                .setName("category")
-                .setDescription("كاتيجوري التذاكر")
-                .addChannelTypes(
-                    ChannelType.GuildCategory
-                )
-                .setRequired(true)
-        )
+new SlashCommandBuilder()
+    .setName("panel")
+    .setDescription("إنشاء بانل تذاكر")
+
 ];
 
 
@@ -3613,163 +3603,158 @@ client.on(
 
                 return;
             }
-
-
-            // ==============================================
-            // SETUP TICKET PANEL
-            // ==============================================
-
-            if (
-                command ===
-                "setup-ticket-panel"
-            ) {
-
-                const level =
-    getStaffLevel(
-        interaction.member,
-        guildData
-    );
-
-const isServerOwner =
-    interaction.guild.ownerId ===
-    interaction.user.id;
-
-const isBotOwner =
-    APPLICATION_OWNER_ID &&
-    interaction.user.id ===
-    APPLICATION_OWNER_ID;
+            
+ // ==============================================
+// PANEL
+// ==============================================
 
 if (
-    level < 3 &&
-    !isServerOwner &&
-    !isBotOwner
+    command ===
+    "panel"
 ) {
 
-    return interaction.reply({
+    const level =
+        getStaffLevel(
+            interaction.member,
+            guildData
+        );
+
+    const isServerOwner =
+        interaction.guild.ownerId ===
+        interaction.user.id;
+
+    const isBotOwner =
+        APPLICATION_OWNER_ID &&
+        interaction.user.id ===
+        APPLICATION_OWNER_ID;
+
+    if (
+        level < 3 &&
+        !isServerOwner &&
+        !isBotOwner
+    ) {
+
+        return interaction.reply({
+            content:
+                "❌ إنشاء بانل التذاكر متاح فقط للإدارة العليا والأونر أو مالك السيرفر.",
+            ephemeral: true
+        });
+    }
+
+    const categoryId =
+        "1547161871671496735";
+
+    const category =
+        guild.channels.cache.get(
+            categoryId
+        );
+
+    if (
+        !category ||
+        category.type !==
+        ChannelType.GuildCategory
+    ) {
+
+        return interaction.reply({
+            content:
+                "❌ كاتيجوري التذاكر غير موجودة.",
+            ephemeral: true
+        });
+    }
+
+    guildData.ticketCategoryId =
+        categoryId;
+
+    guildData.setupCompleted =
+        true;
+
+    const panels =
+        getGuildTicketPanels(
+            guild.id
+        );
+
+    const panelId =
+        `${Date.now()}_${Math.random()
+            .toString(36)
+            .slice(2, 7)}`;
+
+    panels[panelId] = {
+
+        id:
+            panelId,
+
+        name:
+            "الدعم الفني",
+
+        description:
+            "اضغط على الزر أدناه لفتح تذكرة.",
+
+        buttonName:
+            "فتح تذكرة",
+
+        categoryId:
+            categoryId,
+
+        channelId:
+            interaction.channel.id,
+
+        createdBy:
+            interaction.user.id,
+
+        createdAt:
+            Date.now()
+    };
+
+    saveData();
+
+    const embed =
+        new EmbedBuilder()
+            .setColor(0x5865F2)
+            .setTitle(
+                "🎫 الدعم الفني"
+            )
+            .setDescription(
+                "اضغط على الزر أدناه لفتح تذكرة."
+            )
+            .setFooter({
+                text:
+                    "اضغط على الزر أسفل الرسالة لفتح تذكرة."
+            })
+            .setTimestamp();
+
+    const row =
+        new ActionRowBuilder()
+            .addComponents(
+
+                new ButtonBuilder()
+                    .setCustomId(
+                        `open_ticket_${panelId}`
+                    )
+                    .setLabel(
+                        "فتح تذكرة"
+                    )
+                    .setEmoji("🎫")
+                    .setStyle(
+                        ButtonStyle.Primary
+                    )
+            );
+
+    await interaction.reply({
         content:
-            "❌ إنشاء بانلات التذاكر متاح فقط للإدارة العليا والأونر أو مالك السيرفر.",
+            "✅ تم إنشاء بانل التذاكر.",
         ephemeral: true
     });
+
+    await interaction.channel.send({
+        embeds: [embed],
+        components: [row]
+    });
+
+    return;
 }
-                const name =
-                    interaction.options.getString(
-                        "name"
-                    );
-
-                const description =
-                    interaction.options.getString(
-                        "description"
-                    ) ||
-                    "اضغط على الزر لفتح تذكرة.";
-
-                const buttonName =
-                    interaction.options.getString(
-                        "button"
-                    ) ||
-                    "فتح تذكرة";
-
-                const category =
-                    interaction.options.getChannel(
-                        "category"
-                    );
-
-                if (!category) {
-
-                    return interaction.reply({
-                        content:
-                            "❌ يجب تحديد كاتيجوري التذاكر.",
-                        ephemeral: true
-                    });
-                }
-
-                guildData.ticketCategoryId =
-                    category.id;
-
-                guildData.setupCompleted =
-                    true;
-
-                const panels =
-                    getGuildTicketPanels(
-                        guild.id
-                    );
-
-                const panelId =
-                    `${Date.now()}_${Math.random()
-                        .toString(36)
-                        .slice(2, 7)}`;
-
-                panels[panelId] = {
-
-                    id: panelId,
-
-                    name,
-
-                    description,
-
-                    buttonName,
-
-                    categoryId:
-                        category.id,
-
-                    channelId:
-                        interaction.channel.id,
-
-                    createdBy:
-                        interaction.user.id,
-
-                    createdAt:
-                        Date.now()
-                };
-
-                saveData();
-
-                const embed =
-                    new EmbedBuilder()
-                        .setColor(0x5865F2)
-                        .setTitle(
-                            `🎫 ${name}`
-                        )
-                        .setDescription(
-                            description
-                        )
-                        .setFooter({
-                            text:
-                                "اضغط على الزر أسفل الرسالة لفتح تذكرة."
-                        })
-                        .setTimestamp();
-
-                const row =
-                    new ActionRowBuilder()
-                        .addComponents(
-
-                            new ButtonBuilder()
-                                .setCustomId(
-                                    `open_ticket_${panelId}`
-                                )
-                                .setLabel(
-                                    buttonName
-                                )
-                                .setEmoji("🎫")
-                                .setStyle(
-                                    ButtonStyle.Primary
-                                )
-                        );
-
-                await interaction.reply({
-                    content:
-                        "✅ تم إنشاء بانل التذاكر.",
-                    ephemeral: true
-                });
-
-                await interaction.channel.send({
-                    embeds: [embed],
-                    components: [row]
-                });
-
-                return;
-            }
 
 
+ 
             // ==============================================
             // SETUP
             // ==============================================
